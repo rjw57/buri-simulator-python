@@ -1,8 +1,9 @@
 from collections import deque
 import logging
 import struct
-
 import serial
+
+from PySide import QtCore, QtSerialPort
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class ACIA(object):
     def __init__(self, set_reg_cb=None, serial_port=None):
         self.serial_port = None
         if serial_port is not None:
-            self.connect_to_serial(serial_port)
+            self.connect_to_file(serial_port)
 
         # Registers
         self._recv_data = 0
@@ -64,8 +65,9 @@ class ACIA(object):
         if sp is None:
             return
 
-        while sp.inWaiting() != 0:
-            self._in_buffer.append(struct.unpack('B', sp.read(1))[0])
+        while sp.isReadable() and sp.bytesAvailable() > 0:
+            print('.')
+            self._in_buffer.append(sp.getChar())
 
         # There is some data, transfer next data if receive data reg is empty
         if len(self._in_buffer) > 0 and self._status_reg & ACIA._ST_RDRF == 0:
@@ -75,15 +77,18 @@ class ACIA(object):
             self._set_reg_cb(1, self._status_reg)
             self._trigger_irq()
 
-    def connect_to_serial(self, serial_port):
-        """Assign a PySerial-compatible object which will be used as the serial
-        port for the ACIA. The serial port object is modified to reflect the
-        current ACIA settings.
+    def _data_available(self):
+        print('.')
+
+    def connect_to_file(self, filename):
+        """Open a file which will be used as the serial port for the ACIA.
 
         """
-        self.serial_port = serial_port
-        if self.serial_port is not None:
-            self.serial_port.timeout = 0
+        self.serial_port = QtNetwork.QLocalSocket()
+        self.serial_port.connectToServer(filename)
+        if not self.serial_port.waitForConnected(1000):
+            raise ValueError('failed to open %s' % filename)
+        self.serial_port.readyRead.connect(self._data_available)
         self._update_serial_port()
 
     def hw_reset(self):
@@ -171,7 +176,7 @@ class ACIA(object):
 
         # Write output
         if self.serial_port is not None:
-            self.serial_port.write(struct.pack('B', value))
+            self.serial_port.putChar(value) # write(struct.pack('B', value))
 
         # Set transmit data empty reg
         self._status_reg |= ACIA._ST_TDRE
@@ -185,6 +190,9 @@ class ACIA(object):
 
     def _update_serial_port(self):
         """Update associated serial port with new settings from control register."""
+
+        return
+
         if self.serial_port is None:
             return
         sp = self.serial_port

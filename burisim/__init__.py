@@ -58,8 +58,7 @@ def main():
 
     # Create serial port
     from serial import serial_for_url
-    sp = serial_for_url(opts['--serial'])
-    sim.acia1.connect_to_serial(sp)
+    sim.acia1.connect_to_file(opts['--serial'])
 
     # Read ROM
     sim.load_rom(opts['<rom>'])
