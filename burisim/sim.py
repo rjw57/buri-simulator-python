@@ -56,11 +56,13 @@ class BuriSim(object):
         # Do not trace execution
         self.tracing = False
 
-        # Create I/O devices
-        def acia1_set(offset, value):
-            self.mpu.memory[offset + BuriSim.ACIA1_RANGE[0]] = value
+        self.irq = False
+        def trigger_irq():
+            self.irq = True
 
+        # Create I/O devices
         self.acia1 = ACIA()
+        self.acia1.irq_cb = trigger_irq
         self.mpu.register_read_handler(
             BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.read_reg
         )
@@ -133,6 +135,8 @@ class BuriSim(object):
         """Single-cycle the machine for a specified number of clock ticks."""
         # TODO: tracing
         with self._mpu_lock:
+            if self.irq:
+                self.mpu.irq()
             self.mpu.run(ticks)
 
 def _sim_loop(self_wr):

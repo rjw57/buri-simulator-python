@@ -1,6 +1,7 @@
 from collections import deque
 import logging
 import struct
+import queue
 
 from PySide import QtCore
 
@@ -21,14 +22,17 @@ class ACIA(object):
         if serial_port is not None:
             self.connect_to_file(serial_port)
 
+        # Callbacks
+        self.irq_cb = None
+
         # Registers
         self._recv_data = 0
         self._status_reg = 0
         self._command_reg = 0
         self._control_reg = 0
 
-        # read buffer
-        self._in_buffer = deque()
+        # Read queue
+        self._input_queue = queue.Queue()
 
         # Hardware-reset
         self.hw_reset()
@@ -39,15 +43,21 @@ class ACIA(object):
 
     def poll(self):
         """Call regularly to check for incoming data."""
-        # There is some data, transfer next data if receive data reg is empty
-        if len(self._in_buffer) > 0 and self._status_reg & ACIA._ST_RDRF == 0:
-            self._recv_data = self._in_buffer.popleft()
+        if self._status_reg & ACIA._ST_RDRF != 0:
+            return
+
+        try:
+            next_byte = self._input_queue.get(False)
+            self._recv_data = next_byte
             self._status_reg |= ACIA._ST_RDRF
-            self._trigger_irq()
+            if self._command_reg & 0b1 == 0b1:
+                self._trigger_irq()
+        except queue.Empty:
+            pass
 
     def _data_available(self):
         bs = self.serial_port.read(1)[0]
-        self._in_buffer.append(struct.unpack('B', bs)[0])
+        self._input_queue.put(struct.unpack('B', bs)[0])
 
     def connect_to_file(self, filename):
         """Open a file which will be used as the serial port for the ACIA.
@@ -99,14 +109,14 @@ class ACIA(object):
         register.
 
         """
+        self.poll()
+
         if reg_idx == 0:
             # Read receiver register
             self._status_reg &= ~(ACIA._ST_RDRF) # clear data reg full flag
-            self.poll()
             return self._recv_data
         elif reg_idx == 1:
             # Read status register clearing interrupt bit after the fact
-            self.poll()
             sr = self._status_reg
             self._status_reg &= 0b01111111
             return sr
@@ -121,9 +131,9 @@ class ACIA(object):
 
     def _trigger_irq(self):
         """Trigger an interrupt."""
-        if self._control_reg & 0b1100 == 0b0100:
-            self._status_reg |= 0b10010000
-        # FIXME: trigger on processor?
+        self._status_reg |= 0b10010000
+        if self.irq_cb is not None:
+            self.irq_cb()
 
     def _prog_reset(self):
         """Perform a programmed reset."""
@@ -151,8 +161,7 @@ class ACIA(object):
 
         # Trigger IRQ if required
         tic = (self._command_reg >> 2) & 0b11
-        if tic == 1:
-            self._trigger_irq()
+        self._trigger_irq()
 
     def _update_serial_port(self):
         """Update associated serial port with new settings from control register."""
