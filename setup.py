@@ -14,7 +14,7 @@ setup(
         'docopt',
         'future',
         'intervaltree',
-        'pyserial',
+        'pyside',
     ],
     entry_points={
         'console_scripts': [
