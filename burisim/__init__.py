@@ -69,8 +69,11 @@ def start():
     # Reset the simulator
     sim.reset()
 
+    # Start simulating
+    sim.start()
+
     # Application loop
-    n_steps = 20
+    n_steps = 50
     ticks_per_step = 500
     s = dict(
         last_report=time.time(),
@@ -92,7 +95,7 @@ def start():
 
         next_at = max(0, 1000*(((n_steps*ticks_per_step)/2e6)-(now-then)))
         QtCore.QTimer.singleShot(next_at, tick)
-    tick()
+    #tick()
 
 def main():
     app = QtCore.QCoreApplication(sys.argv)

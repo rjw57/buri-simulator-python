@@ -9,6 +9,9 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
 
 from itertools import cycle
 import logging
+import threading
+import time
+import weakref
 
 from past.builtins import basestring # pylint: disable=redefined-builtin
 
@@ -38,6 +41,10 @@ class BuriSim(object):
     def __init__(self):
         # Create our processor
         self.mpu = M6502()
+        self._mpu_lock = threading.Lock()
+        self._mpu_thread = threading.Thread(
+            target=_sim_loop, args=(weakref.ref(self),)
+        )
 
         # Register ROM as read-only
         def raise_rom_exception(addr, value):
@@ -52,10 +59,10 @@ class BuriSim(object):
         # Create I/O devices
         def acia1_set(offset, value):
             self.mpu.memory[offset + BuriSim.ACIA1_RANGE[0]] = value
-        self.acia1 = ACIA(set_reg_cb=acia1_set)
-        # have to have call back for reading from data reg
+
+        self.acia1 = ACIA()
         self.mpu.register_read_handler(
-            BuriSim.ACIA1_RANGE[0], 1, self.acia1.read_reg
+            BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.read_reg
         )
         self.mpu.register_write_handler(
             BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.write_reg
@@ -96,8 +103,9 @@ class BuriSim(object):
         )
 
         # Copy ROM from 0xC000 to 0xFFFF. Loop if necessary.
-        for addr, val in zip(range(*BuriSim.ROM_RANGE), cycle(rom_bytes)):
-            self.mpu.memory[addr] = val
+        with self._mpu_lock:
+            for addr, val in zip(range(*BuriSim.ROM_RANGE), cycle(rom_bytes)):
+                self.mpu.memory[addr] = val
 
     def load_ram_bytes(self, ram_bytes, addr):
         """Load a RAM image from the passed bytes object.
@@ -105,8 +113,9 @@ class BuriSim(object):
         """
         _LOGGER.info('loading RAM image of %s bytes', len(ram_bytes))
 
-        for off, val in enumerate(ram_bytes):
-            self.mpu.memory[addr + off] = val
+        with self._mpu_lock:
+            for off, val in enumerate(ram_bytes):
+                self.mpu.memory[addr + off] = val
 
     def reset(self):
         """Perform a hardware reset."""
@@ -114,17 +123,41 @@ class BuriSim(object):
         self.acia1.hw_reset()
 
         # Reset MPU
-        self.mpu.reset()
+        with self._mpu_lock:
+            self.mpu.reset()
+
+    def start(self):
+        self._mpu_thread.start()
 
     def step(self, ticks):
         """Single-cycle the machine for a specified number of clock ticks."""
-        # Poll ACAI1
-        self.acia1.poll()
-
-        # Look for IRQs
-        if self.acia1.irq:
-            self.mpu.irq()
-
         # TODO: tracing
-        self.mpu.run(ticks)
+        with self._mpu_lock:
+            self.mpu.run(ticks)
 
+def _sim_loop(self_wr):
+    ticks_per_loop = 100000
+    target_freq = 2000000
+
+    last_report = time.time()
+    n_ticks = 0
+    while True:
+        self = self_wr()
+        if self is None:
+            break
+
+        then = time.time()
+        self.step(ticks_per_loop)
+        n_ticks += ticks_per_loop
+        now = time.time()
+
+        if now > last_report + 5:
+            print('Running at {0:d}Hz'.format(
+                int(n_ticks / (now - last_report))
+            ))
+            last_report = now
+            n_ticks = 0
+
+        sleep_t = (ticks_per_loop/target_freq) - (now - then)
+        if sleep_t > 0:
+            time.sleep(sleep_t)
