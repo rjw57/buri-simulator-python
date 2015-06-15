@@ -28,14 +28,16 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
     filter, map, zip
 )
 
-from past.builtins import basestring # pylint: disable=redefined-builtin
-
 from contextlib import contextmanager
 from itertools import cycle
 import logging
 import sys
 
 from docopt import docopt
+from past.builtins import basestring # pylint: disable=redefined-builtin
+
+from burisim.lib6502 import M6502
+from burisim.acia import ACIA
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,16 +56,31 @@ class ReadOnlyMemoryError(MachineError):
 class BuriSim(object):
     ROM_SIZE = 0x2000 # 8K
     ROM_RANGE = 0x10000 - ROM_SIZE, 0x10000
-    ACIA1_RANGE = 0xDFFC, 0xDFFF
+    ACIA1_SIZE = 0x4
+    ACIA1_RANGE = 0xDFFC, 0xDFFC + ACIA1_SIZE
 
     def __init__(self):
+        # Create our processor
+        self.mpu = M6502()
+
+        # Register ROM as read-only
+        def raise_rom_exception(addr, value):
+            raise ReadOnlyMemoryError(addr + BuriSim.ROM_RANGE[0], value)
+        self.mpu.register_write_handler(
+            BuriSim.ROM_RANGE[0], BuriSim.ROM_SIZE, raise_rom_exception
+        )
+
+        # Do not trace execution
         self.tracing = False
 
-        # Behaviour flags
-        self._raise_on_rom_write = True
-
         # Create I/O devices
-        # self.acia1 = ACIA()
+        self.acia1 = ACIA()
+        self.mpu.register_read_handler(
+            BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.read_reg
+        )
+        self.mpu.register_write_handler(
+            BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.write_reg
+        )
 
         # Reset the computer
         self.reset()
@@ -100,9 +117,8 @@ class BuriSim(object):
         )
 
         # Copy ROM from 0xC000 to 0xFFFF. Loop if necessary.
-        with self.writable_rom():
-            for addr, val in zip(range(*BuriSim.ROM_RANGE), cycle(rom_bytes)):
-                self.mem[addr] = val
+        for addr, val in zip(range(*BuriSim.ROM_RANGE), cycle(rom_bytes)):
+            self.mpu.memory[addr] = val
 
     def load_ram_bytes(self, ram_bytes, addr):
         """Load a RAM image from the passed bytes object.
@@ -111,7 +127,7 @@ class BuriSim(object):
         _LOGGER.info('loading RAM image of %s bytes', len(ram_bytes))
 
         for off, val in enumerate(ram_bytes):
-            self.mem[addr + off] = val
+            self.mpu.memory[addr + off] = val
 
     def reset(self):
         """Perform a hardware reset."""
@@ -121,63 +137,17 @@ class BuriSim(object):
         # Reset MPU
         self.mpu.reset()
 
-        # Read reset-vector
-        self.mpu.pc = self.mpu.WordAt(MPU.RESET)
-
-    def step(self):
-        """Single-step the machine."""
+    def step(self, ticks):
+        """Single-cycle the machine for a specified number of clock ticks."""
         # Poll hardware (inefficient but simple)
         self.acia1.poll()
 
         # Look for IRQs
         if self.acia1.irq:
-            self.trigger_irq()
+            self.mpu.irq()
 
-        # Step CPU
-        if self.tracing:
-            _LOGGER.info(repr(self.mpu))
-        self.mpu.step()
-
-    def trigger_irq(self):
-        """Trigger an IRQ on the machine."""
-        # Do nothing if interrupts disabled
-        if self.mpu.p & MPU.INTERRUPT != 0:
-            return
-
-        # Push PC and P
-        self.mpu.stPushWord(self.mpu.pc)
-        self.mpu.stPush(self.mpu.p)
-
-        # Set IRQ disable
-        self.mpu.opSET(MPU.INTERRUPT)
-
-        # Vector to IRQ handler
-        self.mpu.pc = self.mpu.WordAt(self.mpu.IRQ)
-
-    @contextmanager
-    def writable_rom(self):
-        """Return a context manager which will temporarily enable writing to
-        ROM within the context and restore the old state after. Imagine this as
-        a "EEPROM programmer".
-
-        """
-        old_val = self._raise_on_rom_write
-        self._raise_on_rom_write = False
-        yield
-        self._raise_on_rom_write = old_val
-
-    def _add_mem_observers(self):
-        """Internal method to add read/write observers to memory."""
-        def raise_hell(address, value):
-            if self._raise_on_rom_write:
-                raise ReadOnlyMemoryError(address, value)
-        self.mem.subscribe_to_write(range(*BuriSim.ROM_RANGE), raise_hell)
-
-        # Register screen
-        self.screen.observe_mem(self.mem, BuriSim.SCREEN_RANGE[0])
-
-        # Register ACIA
-        self.acia1.observe_mem(self.mem, BuriSim.ACIA1_RANGE[0])
+        # TODO: tracing
+        self.mpu.run(ticks)
 
 def main():
     opts = docopt(__doc__)
@@ -191,7 +161,8 @@ def main():
     sim.tracing = opts['--trace']
 
     # Create serial port
-    sp = serial.serial_for_url(opts['--serial'])
+    from serial import serial_for_url
+    sp = serial_for_url(opts['--serial'])
     sim.acia1.connect_to_serial(sp)
 
     # Read ROM
@@ -203,7 +174,7 @@ def main():
     # Step
     sim.reset()
     while True:
-        sim.step()
+        sim.step(int(1e2))
 
 if __name__ == '__main__':
     main()

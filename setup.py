@@ -13,6 +13,7 @@ setup(
         'cffi>=1.0.0',
         'docopt',
         'future',
+        'intervaltree',
         'pyserial',
     ],
     entry_points={

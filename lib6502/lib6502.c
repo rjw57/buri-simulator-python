@@ -746,7 +746,8 @@ static void oops(void)
 
 void M6502_run(M6502 *mpu, uint32_t ticks)
 {
-#if defined(__GNUC__) && !defined(__STRICT_ANSI__)
+    /* see TODO below for reason for false here */
+#if false && defined(__GNUC__) && !defined(__STRICT_ANSI__)
 
   static void *itab[256]= { &&_00, &&_01, &&_02, &&_03, &&_04, &&_05, &&_06, &&_07, &&_08, &&_09, &&_0a, &&_0b, &&_0c, &&_0d, &&_0e, &&_0f,
 			    &&_10, &&_11, &&_12, &&_13, &&_14, &&_15, &&_16, &&_17, &&_18, &&_19, &&_1a, &&_1b, &&_1c, &&_1d, &&_1e, &&_1f,
@@ -768,17 +769,17 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
   register void **itabp= &itab[0];
   register void  *tpc;
 
+# error TODO: port computed goto to allow for non-infinite looping
+
 # define begin()                fetch();  next()
 # define fetch()                tpc= itabp[memory[PC++]]
-# define next()                 do { \
-    if((ticks != 0) && (tick_count >= ticks)) { goto _done; } goto *tpc; \
-} while(0)
-# define dispatch(num, name, mode, cycles)  _##num: name(cycles, mode) oops();  next()
+# define next()                 goto *tpc
+# define dispatch(num, name, mode, cycles) _##num: name(cycles, mode) oops(); next()
 # define end()                  _done:
 
 #else /* (!__GNUC__) || (__STRICT_ANSI__) */
 
-# define begin()				for (;(ticks==0) || (ticks_count<ticks);) switch (memory[PC++]) {
+# define begin()				for (;should_continue();) switch (memory[PC++]) {
 # define fetch()
 # define next()					break
 # define dispatch(num, name, mode, cycles)	case 0x##num: name(cycles, mode);  next()
@@ -791,6 +792,7 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
 # undef tickIf
 # define tick(n) (tick_count+=(n))
 # define tickIf(p) (tick_count+=((p)?1:0))
+# define should_continue() ((ticks==0) || (tick_count<ticks))
 
   register byte  *memory= mpu->memory;
   register word   PC;
@@ -808,6 +810,8 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
   do_insns(dispatch);
   end();
 
+  externalise();
+
 # undef begin
 # undef internalise
 # undef externalise
@@ -815,7 +819,7 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
 # undef next
 # undef dispatch
 # undef end
-
+# undef should_continue
 
 # undef tick
 # undef tickIf
