@@ -744,7 +744,7 @@ static void oops(void)
 }
 
 
-void M6502_run(M6502 *mpu)
+void M6502_run(M6502 *mpu, uint32_t ticks)
 {
 #if defined(__GNUC__) && !defined(__STRICT_ANSI__)
 
@@ -768,21 +768,29 @@ void M6502_run(M6502 *mpu)
   register void **itabp= &itab[0];
   register void  *tpc;
 
-# define begin()				fetch();  next()
-# define fetch()				tpc= itabp[memory[PC++]]
-# define next()					goto *tpc
-# define dispatch(num, name, mode, cycles)	_##num: name(cycles, mode) oops();  next()
-# define end()
+# define begin()                fetch();  next()
+# define fetch()                tpc= itabp[memory[PC++]]
+# define next()                 do { \
+    if((ticks != 0) && (tick_count >= ticks)) { goto _done; } goto *tpc; \
+} while(0)
+# define dispatch(num, name, mode, cycles)  _##num: name(cycles, mode) oops();  next()
+# define end()                  _done:
 
 #else /* (!__GNUC__) || (__STRICT_ANSI__) */
 
-# define begin()				for (;;) switch (memory[PC++]) {
+# define begin()				for (;(ticks==0) || (ticks_count<ticks);) switch (memory[PC++]) {
 # define fetch()
 # define next()					break
 # define dispatch(num, name, mode, cycles)	case 0x##num: name(cycles, mode);  next()
 # define end()					}
 
 #endif
+
+  uint32_t tick_count = 0;
+# undef tick
+# undef tickIf
+# define tick(n) (tick_count+=(n))
+# define tickIf(p) (tick_count+=((p)?1:0))
 
   register byte  *memory= mpu->memory;
   register word   PC;
@@ -807,6 +815,12 @@ void M6502_run(M6502 *mpu)
 # undef next
 # undef dispatch
 # undef end
+
+
+# undef tick
+# undef tickIf
+# define tick(n)
+# define tickIf(p)
 
   (void)oops;
 }
