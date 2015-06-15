@@ -29,7 +29,7 @@ class ACIA(object):
     _ST_TDRE = 0b00010000
     _ST_RDRF = 0b00001000
 
-    def __init__(self, serial_port=None):
+    def __init__(self, set_reg_cb=None, serial_port=None):
         self.serial_port = None
         if serial_port is not None:
             self.connect_to_serial(serial_port)
@@ -37,14 +37,21 @@ class ACIA(object):
         # Registers
         self._recv_data = 0
         self._status_reg = 0
-        self._control_reg = 0
         self._command_reg = 0
+        self._control_reg = 0
+
+        # Record "set register" callback
+        self._set_reg_cb = set_reg_cb
 
         # read buffer
         self._in_buffer = deque()
 
         # Hardware-reset
         self.hw_reset()
+
+    def _note_reg_update(self, number, value):
+        if self._set_reg_cb is not None:
+            self._set_reg_cb(number, value)
 
     @property
     def irq(self):
@@ -64,6 +71,8 @@ class ACIA(object):
         if len(self._in_buffer) > 0 and self._status_reg & ACIA._ST_RDRF == 0:
             self._recv_data = self._in_buffer.popleft()
             self._status_reg |= ACIA._ST_RDRF
+            self._set_reg_cb(0, self._recv_data)
+            self._set_reg_cb(1, self._status_reg)
             self._trigger_irq()
 
     def connect_to_serial(self, serial_port):
@@ -82,6 +91,9 @@ class ACIA(object):
         self._status_reg = 0b00010000
         self._control_reg = 0b00000000
         self._command_reg = 0b00000000
+        self._set_reg_cb(1, self._status_reg)
+        self._set_reg_cb(2, self._command_reg)
+        self._set_reg_cb(3, self._control_reg)
         self._update_serial_port()
 
     def write_reg(self, reg_idx, value):
@@ -98,10 +110,12 @@ class ACIA(object):
         elif reg_idx == 2:
             # Write command reg.
             self._command_reg = value
+            self._set_reg_cb(2, self._command_reg)
             self._update_serial_port()
         elif reg_idx == 3:
             # Write control reg
             self._control_reg = value
+            self._set_reg_cb(3, self._control_reg)
             self._update_serial_port()
         else:
             raise IndexError('No such register: ' + repr(reg_idx))
@@ -133,6 +147,7 @@ class ACIA(object):
         """Trigger an interrupt."""
         if self._control_reg & 0b1100 == 0b0100:
             self._status_reg |= 0b10010000
+            self._set_reg_cb(1, self._status_reg)
         # FIXME: trigger on processor?
 
     def _prog_reset(self):
@@ -140,6 +155,8 @@ class ACIA(object):
         # NOTE: does not change control reg
         self._status_reg = 0b00010000
         self._command_reg = 0b00000000
+        self._set_reg_cb(1, self._status_reg)
+        self._set_reg_cb(2, self._command_reg)
         self._update_serial_port()
 
     def _tx(self, value):
@@ -158,6 +175,8 @@ class ACIA(object):
 
         # Set transmit data empty reg
         self._status_reg |= ACIA._ST_TDRE
+
+        self._set_reg_cb(1, self._status_reg)
 
         # Trigger IRQ if required
         tic = (self._command_reg >> 2) & 0b11
