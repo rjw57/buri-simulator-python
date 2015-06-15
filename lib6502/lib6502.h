@@ -72,4 +72,4 @@ extern void   M6502_delete(M6502 *mpu);
 #define M6502_setCallback(MPU, TYPE, ADDR, FN)	((MPU)->callbacks->TYPE[ADDR]= (FN))
 
 
-#endif __m6502_h
+#endif
