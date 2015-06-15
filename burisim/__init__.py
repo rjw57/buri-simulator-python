@@ -45,7 +45,8 @@ _LOGGER = logging.getLogger(__name__)
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-def main():
+# called after Qt main loop is running
+def start():
     opts = docopt(__doc__)
     logging.basicConfig(
         level=logging.WARN if opts['--quiet'] else logging.INFO,
@@ -57,7 +58,6 @@ def main():
     sim.tracing = opts['--trace']
 
     # Create serial port
-    from serial import serial_for_url
     sim.acia1.connect_to_file(opts['--serial'])
 
     # Read ROM
@@ -70,17 +70,17 @@ def main():
     sim.reset()
 
     # Application loop
-    app = QtCore.QCoreApplication(sys.argv)
-    ticks_per_step = 10000
+    n_steps = 20
+    ticks_per_step = 500
     s = dict(
         last_report=time.time(),
         total_ticks=0,
     )
     def tick():
-        sim.acia1.poll()
         then = time.time()
-        sim.step(ticks_per_step)
-        s['total_ticks'] += ticks_per_step
+        for _ in range(n_steps):
+            sim.step(ticks_per_step)
+        s['total_ticks'] += ticks_per_step * n_steps
         now = time.time()
 
         if s['last_report'] + 10 < now:
@@ -90,10 +90,15 @@ def main():
             s['total_ticks'] = 0
             s['last_report'] = now
 
-        next_at = max(0, 1000*((ticks_per_step/2e6)-(now-then)))
+        next_at = max(0, 1000*(((n_steps*ticks_per_step)/2e6)-(now-then)))
         QtCore.QTimer.singleShot(next_at, tick)
     tick()
-    sys.exit(app.exec_())
+
+def main():
+    app = QtCore.QCoreApplication(sys.argv)
+    QtCore.QTimer.singleShot(0, start)
+    rv = app.exec_()
+    sys.exit(rv)
 
 if __name__ == '__main__':
     main()

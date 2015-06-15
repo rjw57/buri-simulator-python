@@ -118,6 +118,9 @@ class BuriSim(object):
 
     def step(self, ticks):
         """Single-cycle the machine for a specified number of clock ticks."""
+        # Poll ACAI1
+        self.acia1.poll()
+
         # Look for IRQs
         if self.acia1.irq:
             self.mpu.irq()

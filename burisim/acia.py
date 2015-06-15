@@ -1,9 +1,8 @@
 from collections import deque
 import logging
 import struct
-import serial
 
-from PySide import QtCore, QtSerialPort
+from PySide import QtCore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -12,19 +11,6 @@ class ACIA(object):
     object which will be the serial port connected to the ACIA.
 
     """
-    # Mapping from selected baud rate value to baud rate.
-    # None == unimplemented.
-    _SBN_TABLE = [
-        None, 50, 75, 109.92, 134.58, 150, 300, 600, 1200, 1800,
-        2400, 2600, 4800, 7200, 9600, 19200,
-    ]
-
-    # Mapping from word length setting to word length constants
-    _WL_TABLE = [serial.EIGHTBITS, serial.SEVENBITS, serial.SIXBITS, serial.FIVEBITS]
-
-    # Mapping from parity mode control to parity constants
-    _PMC_TABLE = [serial.PARITY_ODD, serial.PARITY_EVEN, serial.PARITY_NONE, serial.PARITY_NONE]
-
     # Status register bits
     _ST_IRQ = 0b10000000
     _ST_TDRE = 0b00010000
@@ -60,15 +46,6 @@ class ACIA(object):
 
     def poll(self):
         """Call regularly to check for incoming data."""
-        # Early out if no serial port attached or no data waiting
-        sp = self.serial_port
-        if sp is None:
-            return
-
-        while sp.isReadable() and sp.bytesAvailable() > 0:
-            print('.')
-            self._in_buffer.append(sp.getChar())
-
         # There is some data, transfer next data if receive data reg is empty
         if len(self._in_buffer) > 0 and self._status_reg & ACIA._ST_RDRF == 0:
             self._recv_data = self._in_buffer.popleft()
@@ -78,17 +55,24 @@ class ACIA(object):
             self._trigger_irq()
 
     def _data_available(self):
-        print('.')
+        bs = self.serial_port.read(1)[0]
+        self._in_buffer.append(struct.unpack('B', bs)[0])
+        self.poll()
 
     def connect_to_file(self, filename):
         """Open a file which will be used as the serial port for the ACIA.
 
         """
-        self.serial_port = QtNetwork.QLocalSocket()
-        self.serial_port.connectToServer(filename)
-        if not self.serial_port.waitForConnected(1000):
+        self.serial_port = QtCore.QFile(filename)
+        ok = self.serial_port.open(
+            QtCore.QIODevice.ReadWrite | QtCore.QIODevice.Unbuffered
+        )
+        if not ok:
             raise ValueError('failed to open %s' % filename)
-        self.serial_port.readyRead.connect(self._data_available)
+        self._notifier = QtCore.QSocketNotifier(
+            self.serial_port.handle(), QtCore.QSocketNotifier.Read
+        )
+        self._notifier.activated.connect(self._data_available)
         self._update_serial_port()
 
     def hw_reset(self):
@@ -133,11 +117,14 @@ class ACIA(object):
         if reg_idx == 0:
             # Read receiver register
             self._status_reg &= ~(ACIA._ST_RDRF) # clear data reg full flag
+            self._set_reg_cb(1, self._status_reg)
+            QtCore.QTimer.singleShot(0, self.poll)
             return self._recv_data
         elif reg_idx == 1:
             # Read status register clearing interrupt bit after the fact
             sr = self._status_reg
             self._status_reg &= 0b01111111
+            self._set_reg_cb(1, self._status_reg)
             return sr
         elif reg_idx == 2:
             # Read command reg.
