@@ -140,7 +140,8 @@ class BuriSim(object):
             self.mpu.run(ticks)
 
 def _sim_loop(self_wr):
-    ticks_per_loop = 100000
+    ticks_per_step = 5000
+    steps_per_loop = 50
     target_freq = 2000000
 
     last_report = time.time()
@@ -151,8 +152,9 @@ def _sim_loop(self_wr):
             break
 
         then = time.time()
-        self.step(ticks_per_loop)
-        n_ticks += ticks_per_loop
+        for _ in range(steps_per_loop):
+            self.step(ticks_per_step)
+        n_ticks += ticks_per_step * steps_per_loop
         now = time.time()
 
         if now > last_report + 5:
@@ -162,6 +164,6 @@ def _sim_loop(self_wr):
             last_report = now
             n_ticks = 0
 
-        sleep_t = (ticks_per_loop/target_freq) - (now - then)
+        sleep_t = ((steps_per_loop*ticks_per_step)/target_freq) - (now - then)
         if sleep_t > 0:
             time.sleep(sleep_t)
