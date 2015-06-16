@@ -137,7 +137,7 @@ class BuriSim(object):
         with self._mpu_lock:
             if self.irq:
                 self.mpu.irq()
-            self.mpu.run(ticks)
+            return self.mpu.run(ticks)
 
 def _sim_loop(self_wr):
     ticks_per_step = 5000
@@ -153,8 +153,7 @@ def _sim_loop(self_wr):
 
         then = time.time()
         for _ in range(steps_per_loop):
-            self.step(ticks_per_step)
-        n_ticks += ticks_per_step * steps_per_loop
+            n_ticks += self.step(ticks_per_step)
         now = time.time()
 
         if now > last_report + 5:

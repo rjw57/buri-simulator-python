@@ -154,7 +154,7 @@ ffi.cdef("""
     uint16_t
     M6502_setIRQVector(M6502 *mpu, uint16_t address);
 
-    void
+    uint32_t
     M6502_run(M6502 *mpu, uint32_t n_ticks);
 
     int

@@ -584,7 +584,7 @@ enum {
   tick(ticks);								\
   fflush(stdout);							\
   fprintf(stderr, "\nundefined instruction %02X\n", memory[PC-1]);	\
-  return;
+  abort();
 
 #define phR(ticks, adrmode, R)			\
   fetch();					\
@@ -744,7 +744,7 @@ static void oops(void)
 }
 
 
-void M6502_run(M6502 *mpu, uint32_t ticks)
+uint32_t M6502_run(M6502 *mpu, uint32_t ticks)
 {
   /* There used to be an implementation making use of computed goto here.
    * For the moment, remove the implementation since it makes the control flow a
@@ -757,6 +757,7 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
 # define next()					break
 # define dispatch(num, name, mode, cycles)	case 0x##num: name(cycles, mode);  next()
 # define end()					}
+# define abort()                                return tick_count
 
   uint32_t tick_count = 0;
 # undef tick
@@ -790,6 +791,7 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
 # undef next
 # undef dispatch
 # undef end
+# undef abort
 # undef should_continue
 
 # undef tick
@@ -798,6 +800,8 @@ void M6502_run(M6502 *mpu, uint32_t ticks)
 # define tickIf(p)
 
   (void)oops;
+
+  return tick_count;
 }
 
 

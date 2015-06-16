@@ -52,13 +52,13 @@ enum {
 };
 
 extern M6502 *M6502_new(M6502_Registers *registers, M6502_Memory memory, M6502_Callbacks *callbacks);
-extern void   M6502_reset(M6502 *mpu);
-extern void   M6502_nmi(M6502 *mpu);
-extern void   M6502_irq(M6502 *mpu);
-extern void   M6502_run(M6502 *mpu, uint32_t n_ticks); // NB. n_ticks == 0 => forever
-extern int    M6502_disassemble(M6502 *mpu, uint16_t addr, char buffer[64]);
-extern void   M6502_dump(M6502 *mpu, char buffer[64]);
-extern void   M6502_delete(M6502 *mpu);
+extern void     M6502_reset(M6502 *mpu);
+extern void     M6502_nmi(M6502 *mpu);
+extern void     M6502_irq(M6502 *mpu);
+extern uint32_t M6502_run(M6502 *mpu, uint32_t n_ticks); // NB. n_ticks == 0 => forever
+extern int      M6502_disassemble(M6502 *mpu, uint16_t addr, char buffer[64]);
+extern void     M6502_dump(M6502 *mpu, char buffer[64]);
+extern void     M6502_delete(M6502 *mpu);
 
 #define M6502_getVector(MPU, VEC)			\
   ( ( ((MPU)->memory[M6502_##VEC##VectorLSB]) )		\

@@ -119,12 +119,16 @@ class M6502(object):
         return self._mpu.memory
 
     def run(self, ticks=0):
-        """Run the processor for a specified number of clock ticks. If ticks is
-        0, the processor is run forever. Due to an implementation issue, ticks <
-        4 billion-ish.
+        """Run the processor for at least the specified number of clock ticks.
+        If ticks is 0, the processor is run forever. Due to an implementation
+        issue, ticks < 4 billion-ish.
+
+        Returns the number of ticks actually performed. This may be different
+        that the amount requested since emulation always stops on an instruction
+        boundary.
 
         """
-        lib.M6502_run(self._mpu, ticks)
+        return lib.M6502_run(self._mpu, ticks)
 
     def reset(self):
         """Trigger a processor reset.
