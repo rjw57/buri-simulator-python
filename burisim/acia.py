@@ -58,6 +58,7 @@ class ACIA(object):
     def _data_available(self):
         bs = self.serial_port.read(1)[0]
         self._input_queue.put(struct.unpack('B', bs)[0])
+        self.poll()
 
     def connect_to_file(self, filename):
         """Open a file which will be used as the serial port for the ACIA.
@@ -110,7 +111,6 @@ class ACIA(object):
 
         """
         self.poll()
-
         if reg_idx == 0:
             # Read receiver register
             self._status_reg &= ~(ACIA._ST_RDRF) # clear data reg full flag
@@ -161,7 +161,8 @@ class ACIA(object):
 
         # Trigger IRQ if required
         tic = (self._command_reg >> 2) & 0b11
-        self._trigger_irq()
+        if tic == 0b01:
+            self._trigger_irq()
 
     def _update_serial_port(self):
         """Update associated serial port with new settings from control register."""
