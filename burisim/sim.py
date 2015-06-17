@@ -56,9 +56,8 @@ class BuriSim(object):
         # Do not trace execution
         self.tracing = False
 
-        self.irq = False
         def trigger_irq():
-            self.irq = True
+            self.mpu.irq()
 
         # Create I/O devices
         self.acia1 = ACIA()
@@ -135,13 +134,10 @@ class BuriSim(object):
         """Single-cycle the machine for a specified number of clock ticks."""
         # TODO: tracing
         with self._mpu_lock:
-            if self.irq:
-                self.mpu.irq()
             return self.mpu.run(ticks)
 
 def _sim_loop(self_wr):
-    ticks_per_step = 5000
-    steps_per_loop = 50
+    ticks_per_loop = 50000
     target_freq = 2000000
 
     last_report = time.time()
@@ -152,8 +148,7 @@ def _sim_loop(self_wr):
             break
 
         then = time.time()
-        for _ in range(steps_per_loop):
-            n_ticks += self.step(ticks_per_step)
+        n_ticks += self.step(ticks_per_loop)
         now = time.time()
 
         if now > last_report + 5:
@@ -163,6 +158,6 @@ def _sim_loop(self_wr):
             last_report = now
             n_ticks = 0
 
-        sleep_t = ((steps_per_loop*ticks_per_step)/target_freq) - (now - then)
+        sleep_t = ((ticks_per_loop)/target_freq) - (now - then)
         if sleep_t > 0:
             time.sleep(sleep_t)

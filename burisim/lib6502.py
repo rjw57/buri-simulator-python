@@ -145,6 +145,7 @@ class M6502(object):
     def irq(self):
         """Trigger a maskable interrupt.
 
+        This call is thread-safe.
         """
         lib.M6502_irq(self._mpu)
 
