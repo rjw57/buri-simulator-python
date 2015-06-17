@@ -156,7 +156,7 @@ class BuriSim(object):
             return self.mpu.run(ticks)
 
 def _sim_loop(self_wr):
-    ticks_per_loop = 50000
+    ticks_per_loop = 10000
     target_freq = 2000000
 
     last_report = time.time()
