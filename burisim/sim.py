@@ -16,6 +16,7 @@ from past.builtins import basestring # pylint: disable=redefined-builtin
 
 from burisim.lib6502 import M6502
 from burisim.hw.acia import ACIA
+from burisim.hw.hd44780 import HD44780
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +41,8 @@ class BuriSim(object):
     ACIA1_SIZE = 0x4
     ACIA1_RANGE = 0xDFFC, 0xDFFC + ACIA1_SIZE
 
+    LCD1_START = 0xDFF0
+
     def __init__(self):
         # Create our processor
         self.mpu = M6502()
@@ -60,7 +63,12 @@ class BuriSim(object):
         # IRQ lines
         self._irq_lines = {}
 
-        # Create I/O devices
+        self._create_hw()
+
+        # Reset the computer
+        self.reset()
+
+    def _create_hw(self):
         self.acia1 = ACIA()
         self.acia1.irq_cb = self._new_irq_line()
         self.mpu.register_read_handler(
@@ -70,8 +78,13 @@ class BuriSim(object):
             BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.write_reg
         )
 
-        # Reset the computer
-        self.reset()
+        self.display = HD44780()
+        self.mpu.register_read_handler(
+            BuriSim.LCD1_START, 2, self.display.read
+        )
+        self.mpu.register_write_handler(
+            BuriSim.LCD1_START, 2, self.display.write
+        )
 
     def _new_irq_line(self):
         idx = len(self._irq_lines)
