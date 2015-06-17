@@ -32,6 +32,9 @@ class ReadOnlyMemoryError(MachineError):
         )
 
 class BuriSim(object):
+    """Main simulator implementation.
+
+    """
     ROM_SIZE = 0x2000 # 8K
     ROM_RANGE = 0x10000 - ROM_SIZE, 0x10000
     ACIA1_SIZE = 0x4
@@ -80,6 +83,14 @@ class BuriSim(object):
                 self.mpu.irq()
         self._irq_lines[idx] = True
         return setter
+
+    @property
+    def memory(self):
+        """A *read-only* sequence representing the machine memory. Don't mutate
+        this unless you are some sort of crazy expert.
+
+        """
+        return self.mpu.memory
 
     @property
     def irq(self):

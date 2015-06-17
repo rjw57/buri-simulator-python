@@ -66,15 +66,26 @@ def create_sim():
 
     return sim
 
+class SimulatorUI(object):
+    def __init__(self):
+        # Retrieve the application instance
+        app = QtCore.QCoreApplication.instance()
+        assert app is not None
+
+        # Create the main simulator and attach it to application quit events.
+        self.sim = create_sim()
+
+        # Start simulating once event loop is running
+        QtCore.QTimer.singleShot(0, self.sim.start)
+
+        # Stop simulating when app is quitting
+        app.aboutToQuit.connect(self.sim.stop)
+
 def main():
     app = QtCore.QCoreApplication(sys.argv)
-    sim = create_sim()
 
-    # Start simulating once event loop is running
-    QtCore.QTimer.singleShot(0, sim.start)
-
-    # Stop simulating when app is quitting
-    app.aboutToQuit.connect(sim.stop)
+    # Create the sim UI
+    ui = SimulatorUI()
 
     # Wire up Ctrl-C to quit app.
     def interrupt(*args):
@@ -82,6 +93,7 @@ def main():
         app.quit()
     signal.signal(signal.SIGINT, interrupt)
 
+    # Start the application
     rv = app.exec_()
     sys.exit(rv)
 
