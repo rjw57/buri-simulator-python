@@ -56,12 +56,12 @@ class BuriSim(object):
         # Do not trace execution
         self.tracing = False
 
-        def trigger_irq():
-            self.mpu.irq()
+        # IRQ lines
+        self._irq_lines = {}
 
         # Create I/O devices
         self.acia1 = ACIA()
-        self.acia1.irq_cb = trigger_irq
+        self.acia1.irq_cb = self._new_irq_line()
         self.mpu.register_read_handler(
             BuriSim.ACIA1_RANGE[0], BuriSim.ACIA1_SIZE, self.acia1.read_reg
         )
@@ -71,6 +71,25 @@ class BuriSim(object):
 
         # Reset the computer
         self.reset()
+
+    def _new_irq_line(self):
+        idx = len(self._irq_lines)
+        def setter(flag):
+            prev_irq = self.irq
+            self._irq_lines[idx] = flag
+            new_irq = self.irq
+            if prev_irq and not new_irq:
+                self.mpu.irq()
+        self._irq_lines[idx] = True
+        return setter
+
+    @property
+    def irq(self):
+        """The state of the ~IRQ line. This is an AND of all the individual ~IRQ
+        lines of each I/O device. (I.e. the NOR of the IRQ lines.)
+
+        """
+        return all(self._irq_lines.values())
 
     def load_rom(self, fobj_or_string):
         """Load a ROM image from the passed file object or filename-string. The

@@ -119,6 +119,9 @@ class ACIA(object):
             # Read status register clearing interrupt bit after the fact
             sr = self._status_reg
             self._status_reg &= 0b01111111
+
+            # Raise IRQ line
+            self._set_irq(True)
             return sr
         elif reg_idx == 2:
             # Read command reg.
@@ -129,11 +132,14 @@ class ACIA(object):
         else:
             raise IndexError('No such register: ' + repr(reg_idx))
 
+    def _set_irq(self, val):
+        if self.irq_cb is not None:
+            self.irq_cb(val)
+
     def _trigger_irq(self):
         """Trigger an interrupt."""
         self._status_reg |= 0b10010000
-        if self.irq_cb is not None:
-            self.irq_cb()
+        self._set_irq(False)
 
     def _prog_reset(self):
         """Perform a programmed reset."""
