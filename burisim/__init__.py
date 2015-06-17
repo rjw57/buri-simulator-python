@@ -36,6 +36,7 @@ from docopt import docopt
 from PySide import QtCore, QtGui
 
 from burisim.sim import BuriSim
+from burisim.hw.hd44780 import HD44780View
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,8 +44,15 @@ class MemoryView(QtGui.QWidget):
     def __init__(self, *args, **kwargs):
         super(MemoryView, self).__init__(*args, **kwargs)
         self.simulator = None
-        self.page = 0
+        self._page = 0
         self._init_ui()
+
+    def page(self):
+        return self._page
+
+    def setPage(self, v):
+        self._page = v
+        self._refresh_mem()
 
     def _init_ui(self):
         l = QtGui.QVBoxLayout()
@@ -72,7 +80,7 @@ class MemoryView(QtGui.QWidget):
 
         def mem_contents():
             m = self.simulator.memory
-            start = 0x100 + self.page
+            start = 0x100 + self._page*0x100
             for line_offset in range(0x000, 0x100, 0x010):
                 contents = m[start + line_offset:start + line_offset+0x010]
                 yield line_offset, contents
@@ -84,7 +92,9 @@ class MemoryView(QtGui.QWidget):
                 for o in range(0, len(contents), 8)
             )
             asciirepr = ''.join(chr(b) if b>=32 and b<127 else '.' for b  in contents)
-            return '{0:04X}  {1:48}  |{2:16}|'.format(offset, hexrepr, asciirepr)
+            return '{0:04X}  {1:48}  |{2:16}|'.format(
+                self._page*0x100 + offset, hexrepr, asciirepr
+            )
 
         dump = ''.join((
             '      {0}  {1}\n'.format(
@@ -94,7 +104,6 @@ class MemoryView(QtGui.QWidget):
             '\n'.join(render_line(o, c) for o, c in mem_contents()),
         ))
         self._te.setHtml('<pre><code>' + cgi.escape(dump) + '</code></pre>')
-        self.adjustSize()
 
 class SimulatorUI(object):
     def __init__(self, sim):
@@ -102,10 +111,29 @@ class SimulatorUI(object):
         self.sim = sim
 
         # Create memory view
-        self._mv = MemoryView()
-        self._mv.simulator = self.sim
+        self._mv = QtGui.QWidget()
+        l = QtGui.QVBoxLayout()
+        self._mv.setLayout(l)
+
+        mv = MemoryView()
+        mv.simulator = self.sim
+        l.addWidget(mv)
+
+        sp = QtGui.QSpinBox()
+        sp.setMinimum(0)
+        sp.setMaximum(0xff)
+        sp.valueChanged.connect(lambda v: mv.setPage(v))
+        l.addWidget(sp)
+
         self._mv.adjustSize()
         self._mv.show()
+        self._mv.setWindowTitle("Memory")
+
+        # Create lcd view
+        self._lcd = HD44780View()
+        self._lcd.display = self.sim.display
+        self._lcd.show()
+        self._lcd.setWindowTitle("Display")
 
 def create_sim(opts):
     # Create simulator
