@@ -30,20 +30,16 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
 from past.builtins import basestring # pylint: disable=redefined-builtin
 
 import logging
+import signal
 import sys
 import time
 
 from docopt import docopt
 from PySide import QtCore
 
-from burisim.acia import ACIA
 from burisim.sim import BuriSim
 
 _LOGGER = logging.getLogger(__name__)
-
-# Dirty trick to *REALLY KILL* on Ctrl-C
-import signal
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 # called after Qt main loop is running
 def start():
@@ -72,34 +68,16 @@ def start():
     # Start simulating
     sim.start()
 
-    # Application loop
-    n_steps = 50
-    ticks_per_step = 500
-    s = dict(
-        last_report=time.time(),
-        total_ticks=0,
-    )
-    def tick():
-        then = time.time()
-        for _ in range(n_steps):
-            sim.step(ticks_per_step)
-        s['total_ticks'] += ticks_per_step * n_steps
-        now = time.time()
-
-        if s['last_report'] + 10 < now:
-            print('Running at {0:d}Hz'.format(
-                int(s['total_ticks'] / (now - s['last_report']))
-            ))
-            s['total_ticks'] = 0
-            s['last_report'] = now
-
-        next_at = max(0, 1000*(((n_steps*ticks_per_step)/2e6)-(now-then)))
-        QtCore.QTimer.singleShot(next_at, tick)
-    #tick()
-
 def main():
     app = QtCore.QCoreApplication(sys.argv)
     QtCore.QTimer.singleShot(0, start)
+
+    # Wire up Ctrl-C to quit app.
+    def interrupt(*args):
+        print('received interrupt, exitting...')
+        app.quit()
+    signal.signal(signal.SIGINT, interrupt)
+
     rv = app.exec_()
     sys.exit(rv)
 

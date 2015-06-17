@@ -16,7 +16,7 @@ import weakref
 from past.builtins import basestring # pylint: disable=redefined-builtin
 
 from burisim.lib6502 import M6502
-from burisim.acia import ACIA
+from burisim.hw.acia import ACIA
 
 _LOGGER = logging.getLogger(__name__)
 
