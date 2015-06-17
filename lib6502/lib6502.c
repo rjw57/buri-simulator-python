@@ -36,6 +36,10 @@ typedef uint8_t  byte;
 typedef uint16_t word;
 
 enum {
+  requestIRQ= (1<<0)    /* IRQ has been requested */
+};
+
+enum {
   flagN= (1<<7),        /* negative      */
   flagV= (1<<6),        /* overflow      */
   flagX= (1<<5),        /* unused        */
@@ -705,6 +709,13 @@ enum {
 
 void M6502_irq(M6502 *mpu)
 {
+  /* Atomically set request IRQ flag via GCC builtin. */
+  __sync_fetch_and_or(&mpu->request_flags, requestIRQ);
+}
+
+/* Actually perform IRQ. */
+void M6502_irq_real_(M6502 *mpu)
+{
   if (!(mpu->registers->p & flagI))
     {
       mpu->memory[0x0100 + mpu->registers->s--] = (byte)(mpu->registers->pc >> 8);
@@ -778,9 +789,21 @@ uint32_t M6502_run(M6502 *mpu, uint32_t ticks)
 
   internalise();
 
-  begin();
-  do_insns(dispatch);
-  end();
+  /* begin(); */
+  for (;should_continue();) {
+    /* was IRQ requested? */
+    if(__sync_fetch_and_and(&mpu->request_flags, ~((unsigned int)requestIRQ)) & requestIRQ) {
+      /* yes, perform one */
+      externalise();
+      M6502_irq_real_(mpu);
+      internalise();
+    }
+
+    switch (memory[PC++]) {
+      do_insns(dispatch);
+    }
+  }
+  /* end(); */
 
   externalise();
 
@@ -872,6 +895,8 @@ M6502 *M6502_new(M6502_Registers *registers, M6502_Memory memory, M6502_Callback
   mpu->memory    = memory;
   mpu->callbacks = callbacks;
 
+  mpu->request_flags = 0;
+
   return mpu;
 }
 
@@ -885,4 +910,5 @@ void M6502_delete(M6502 *mpu)
   free(mpu);
 }
 
-/* vim:sw=2:sts=2:et */
+/* vim:sw=2:sts=2:et
+ */

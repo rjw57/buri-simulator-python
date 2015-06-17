@@ -43,6 +43,8 @@ struct _M6502
   uint8_t         *memory;
   M6502_Callbacks *callbacks;
   unsigned int     flags;
+
+  unsigned int     request_flags; /* set by M6502_irq, etc. */
 };
 
 enum {
@@ -74,4 +76,5 @@ extern void     M6502_delete(M6502 *mpu);
 
 #endif
 
-/* vim:sw=2:sts=2:et */
+/* vim:sw=2:sts=2:et
+ */
