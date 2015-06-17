@@ -44,6 +44,7 @@ struct _M6502
   M6502_Callbacks *callbacks;
   unsigned int     flags;
 
+  uint32_t         target_freq;   /* in kHz, defaults to 2000 */
   unsigned int     request_flags; /* set by M6502_irq, etc. */
 };
 
@@ -57,7 +58,7 @@ extern M6502 *M6502_new(M6502_Registers *registers, M6502_Memory memory, M6502_C
 extern void     M6502_reset(M6502 *mpu);
 extern void     M6502_nmi(M6502 *mpu);
 extern void     M6502_irq(M6502 *mpu);
-extern uint32_t M6502_run(M6502 *mpu, uint32_t n_ticks); // NB. n_ticks == 0 => forever
+extern uint64_t M6502_run(M6502 *mpu, uint64_t n_ticks); // NB. n_ticks == 0 => forever
 extern int      M6502_disassemble(M6502 *mpu, uint16_t addr, char buffer[64]);
 extern void     M6502_dump(M6502 *mpu, char buffer[64]);
 extern void     M6502_delete(M6502 *mpu);

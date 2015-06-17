@@ -99,6 +99,7 @@ ffi.cdef("""
     {
         M6502_Registers  *registers;   /* processor state */
         uint8_t          *memory;      /* memory image */
+        uint32_t          target_freq; /* in kHz, defaults to 2000 */
         ...;
     };
     typedef struct _M6502 M6502;
@@ -154,8 +155,8 @@ ffi.cdef("""
     uint16_t
     M6502_setIRQVector(M6502 *mpu, uint16_t address);
 
-    uint32_t
-    M6502_run(M6502 *mpu, uint32_t n_ticks);
+    uint64_t
+    M6502_run(M6502 *mpu, uint64_t n_ticks);
 
     int
     M6502_disassemble(M6502 *mpu, uint16_t addres_s, char buffer[64]);

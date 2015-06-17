@@ -156,9 +156,7 @@ class BuriSim(object):
             return self.mpu.run(ticks)
 
 def _sim_loop(self_wr):
-    ticks_per_loop = 10000
-    target_freq = 2000000
-
+    ticks_per_loop = 1000000 # should mean the loop is around 0.5Hz.
     last_report = time.time()
     n_ticks = 0
     while True:
@@ -166,7 +164,6 @@ def _sim_loop(self_wr):
         if self is None:
             break
 
-        then = time.time()
         n_ticks += self.step(ticks_per_loop)
         now = time.time()
 
@@ -176,7 +173,3 @@ def _sim_loop(self_wr):
             ))
             last_report = now
             n_ticks = 0
-
-        sleep_t = ((ticks_per_loop)/target_freq) - (now - then)
-        if sleep_t > 0:
-            time.sleep(sleep_t)

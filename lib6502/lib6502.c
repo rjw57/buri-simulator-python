@@ -29,6 +29,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "lib6502.h"
 
@@ -753,9 +754,49 @@ static void oops(void)
 {
   fprintf(stderr, "\noops -- instruction dispatch missing\n");
 }
+/* this is taken from the glibc docs */
 
+/* Subtract the 'struct timespec' values X and Y,
+   storing the result in RESULT.
+   Return 1 if the difference is negative, otherwise 0.
 
-uint32_t M6502_run(M6502 *mpu, uint32_t ticks)
+   Adapted from the glibc documentation.
+   */
+static int
+timespec_subtract(struct timespec *result, struct timespec* x, struct timespec *y)
+{
+  /* Perform the carry for the later subtraction by updating y. */
+  if (x->tv_nsec < y->tv_nsec) {
+    int64_t nsec = (y->tv_nsec - x->tv_nsec) / 1000000000 + 1;
+    y->tv_nsec -= 1000000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_nsec - y->tv_nsec > 1000000000) {
+    int64_t nsec = (x->tv_nsec - y->tv_nsec) / 1000000000;
+    y->tv_nsec += 1000000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+  /* Compute the time remaining to wait.
+     tv_nsec is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_nsec = x->tv_nsec - y->tv_nsec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
+
+/* fix up a timespec s.t. nsec is always <1e9 */
+static
+void fixup_timespec(struct timespec *ts)
+{
+  while(ts->tv_nsec >= 1000000000) {
+    ts->tv_nsec -= 1000000000;
+    ts->tv_sec += 1;
+  }
+}
+
+uint64_t M6502_run(M6502 *mpu, uint64_t ticks)
 {
   /* There used to be an implementation making use of computed goto here.
    * For the moment, remove the implementation since it makes the control flow a
@@ -770,7 +811,6 @@ uint32_t M6502_run(M6502 *mpu, uint32_t ticks)
 # define end()                                  }
 # define abort()                                return tick_count
 
-  uint32_t tick_count = 0;
 # undef tick
 # undef tickIf
 # define tick(n) (tick_count+=(n))
@@ -783,27 +823,60 @@ uint32_t M6502_run(M6502 *mpu, uint32_t ticks)
   byte            A, X, Y, P, S;
   M6502_Callback *readCallback=  mpu->callbacks->read;
   M6502_Callback *writeCallback= mpu->callbacks->write;
+  uint64_t        tick_count = 0;
+  struct timespec expected_loop_start;
+  struct timespec now, delta;
 
 # define internalise()  A= mpu->registers->a;  X= mpu->registers->x;  Y= mpu->registers->y;  P= mpu->registers->p;  S= mpu->registers->s;  PC= mpu->registers->pc
 # define externalise()  mpu->registers->a= A;  mpu->registers->x= X;  mpu->registers->y= Y;  mpu->registers->p= P;  mpu->registers->s= S;  mpu->registers->pc= PC
 
   internalise();
 
-  /* begin(); */
-  for (;should_continue();) {
-    /* was IRQ requested? */
-    if(__sync_fetch_and_and(&mpu->request_flags, ~((unsigned int)requestIRQ)) & requestIRQ) {
-      /* yes, perform one */
-      externalise();
-      M6502_irq_real_(mpu);
-      internalise();
-    }
+  /* each iteration of this loop should be 1ms */
+  clock_gettime(CLOCK_MONOTONIC, &expected_loop_start);
+  for(;should_continue();) {
+    /* end tick count for this iteration */
+    uint64_t next_ticks = tick_count + mpu->target_freq;
+    uint64_t start_tick = tick_count;
+    struct timespec expected_loop_end = expected_loop_start, expected_loop_duration;
 
-    switch (memory[PC++]) {
-      do_insns(dispatch);
+    /* begin(); */
+    while(tick_count < next_ticks) {
+      /* was IRQ requested? */
+      if(__sync_fetch_and_and(&mpu->request_flags, ~((unsigned int)requestIRQ)) & requestIRQ) {
+        /* yes, perform one */
+        externalise();
+        M6502_irq_real_(mpu);
+        tick_count += 7; /* IRQ sequence takes 7 clock cycles */
+        internalise();
+      }
+
+      switch (memory[PC++]) {
+        do_insns(dispatch);
+      }
+    }
+    /* end(); */
+
+    /* how long should this loop have taken in reality? */
+    expected_loop_duration.tv_sec = 0;
+    expected_loop_duration.tv_nsec =
+      (1000000 * (tick_count - start_tick)) / mpu->target_freq;
+    fixup_timespec(&expected_loop_duration);
+
+    expected_loop_end.tv_sec += expected_loop_duration.tv_sec;
+    expected_loop_end.tv_nsec += expected_loop_duration.tv_nsec;
+    fixup_timespec(&expected_loop_end);
+
+    /* record this new end point as the next loop start */
+    expected_loop_start = expected_loop_end;
+
+    /* record actual end time and compute delta */
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if(0 == timespec_subtract(&delta, &expected_loop_end, &now)) {
+      /* we were slow, we need to sleep */
+      nanosleep(&delta, NULL);
     }
   }
-  /* end(); */
 
   externalise();
 
@@ -891,11 +964,11 @@ M6502 *M6502_new(M6502_Registers *registers, M6502_Memory memory, M6502_Callback
 
   if (!registers || !memory || !callbacks) outOfMemory();
 
-  mpu->registers = registers;
-  mpu->memory    = memory;
-  mpu->callbacks = callbacks;
-
-  mpu->request_flags = 0;
+  mpu->registers      = registers;
+  mpu->memory         = memory;
+  mpu->callbacks      = callbacks;
+  mpu->target_freq    = 2000; /* kHz */
+  mpu->request_flags  = 0;
 
   return mpu;
 }
