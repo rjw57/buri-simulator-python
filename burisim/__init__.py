@@ -9,14 +9,11 @@ Options:
     -h, --help          Show a brief usage summary.
     -q, --quiet         Decrease verbosity.
 
-    --trace             Trace CPU execution.
+    --no-gui            Don't create GUI.
 
 Hardware options:
     --serial URL        Connect ACIA1 to this serial port. [default: loop://]
     --load FILE         Pre-load FILE at location 0x5000 in RAM.
-
-    See http://pyserial.sourceforge.net/pyserial_api.html#urls for a discussion
-    of possible serial connection URLs.
 
 """
 # Make py2 like py3
@@ -41,31 +38,6 @@ from PySide import QtCore, QtGui
 from burisim.sim import BuriSim
 
 _LOGGER = logging.getLogger(__name__)
-
-def create_sim():
-    opts = docopt(__doc__)
-    logging.basicConfig(
-        level=logging.WARN if opts['--quiet'] else logging.INFO,
-        stream=sys.stderr, format='%(name)s: %(message)s'
-    )
-
-    # Create simulator
-    sim = BuriSim()
-    sim.tracing = opts['--trace']
-
-    # Create serial port
-    sim.acia1.connect_to_file(opts['--serial'])
-
-    # Read ROM
-    sim.load_rom(opts['<rom>'])
-
-    if opts['--load'] is not None:
-        sim.load_ram(opts['--load'], 0x5000)
-
-    # Reset the simulator
-    sim.reset()
-
-    return sim
 
 class MemoryView(QtGui.QWidget):
     def __init__(self, *args, **kwargs):
@@ -125,19 +97,9 @@ class MemoryView(QtGui.QWidget):
         self.adjustSize()
 
 class SimulatorUI(object):
-    def __init__(self):
-        # Retrieve the application instance
-        app = QtCore.QCoreApplication.instance()
-        assert app is not None
-
-        # Create the main simulator and attach it to application quit events.
-        self.sim = create_sim()
-
-        # Start simulating once event loop is running
-        QtCore.QTimer.singleShot(0, self.sim.start)
-
-        # Stop simulating when app is quitting
-        app.aboutToQuit.connect(self.sim.stop)
+    def __init__(self, sim):
+        # Assign simulator
+        self.sim = sim
 
         # Create memory view
         self._mv = MemoryView()
@@ -145,17 +107,55 @@ class SimulatorUI(object):
         self._mv.adjustSize()
         self._mv.show()
 
-def main():
-    app = QtGui.QApplication(sys.argv)
+def create_sim(opts):
+    # Create simulator
+    sim = BuriSim()
 
-    # Create the sim UI
-    ui = SimulatorUI()
+    # Create serial port
+    sim.acia1.connect_to_file(opts['--serial'])
+
+    # Read ROM
+    sim.load_rom(opts['<rom>'])
+
+    if opts['--load'] is not None:
+        sim.load_ram(opts['--load'], 0x5000)
+
+    # Reset the simulator
+    sim.reset()
+
+    return sim
+
+def main():
+    opts = docopt(__doc__)
+    logging.basicConfig(
+        level=logging.WARN if opts['--quiet'] else logging.INFO,
+        stream=sys.stderr, format='%(name)s: %(message)s'
+    )
+
+    # Create GUI or non-GUI application as appropriate
+    if opts['--no-gui']:
+        app = QtCore.QCoreApplication(sys.argv)
+    else:
+        app = QtGui.QApplication(sys.argv)
 
     # Wire up Ctrl-C to quit app.
     def interrupt(*args):
         print('received interrupt signal, exitting...')
         app.quit()
     signal.signal(signal.SIGINT, interrupt)
+
+    # Create the main simulator and attach it to application quit events.
+    sim = create_sim(opts)
+
+    # Start simulating once event loop is running
+    QtCore.QTimer.singleShot(0, sim.start)
+
+    # Stop simulating when app is quitting
+    app.aboutToQuit.connect(sim.stop)
+
+    # Create the sim UI if requested
+    if not opts['--no-gui']:
+        ui = SimulatorUI(sim)
 
     # Start the application
     sys.exit(app.exec_())
