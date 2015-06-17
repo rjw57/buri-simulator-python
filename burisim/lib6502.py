@@ -181,15 +181,23 @@ class M6502(object):
     def nmi_vector(self, v):
         return lib.M6502_setNMIVector(self._mpu, v)
 
-    # Internal callback handlinmg
+    # Internal callback handling
 
     def _read(self, addr):
         v = 0
         for i in self._read_cbs[addr]:
             v = i.data(addr - i.begin)
+
+        # reflect in memory array
+        self._mpu.memory[addr] = v
+
         return v
 
     def _write(self, addr, data):
+
+        # reflect in memory array
+        self._mpu.memory[addr] = data
+
         for i in self._write_cbs[addr]:
             i.data(addr - i.begin, data)
 
