@@ -37,7 +37,8 @@ typedef uint8_t  byte;
 typedef uint16_t word;
 
 enum {
-  requestIRQ= (1<<0)    /* IRQ has been requested */
+  requestExit = (1<<1), /* Immediate exit from M6502_run() */
+  requestIRQ  = (1<<0), /* IRQ has been requested */
 };
 
 enum {
@@ -748,6 +749,13 @@ void M6502_reset(M6502 *mpu)
 }
 
 
+void M6502_exit(M6502 *mpu)
+{
+  /* Atomically set request exit flag via GCC builtin. */
+  __sync_fetch_and_or(&mpu->request_flags, requestExit);
+}
+
+
 /* the compiler should elminate all call to this function */
 
 static void oops(void)
@@ -815,7 +823,7 @@ uint64_t M6502_run(M6502 *mpu, uint64_t ticks)
 # undef tickIf
 # define tick(n) (tick_count+=(n))
 # define tickIf(p) (tick_count+=((p)?1:0))
-# define should_continue() ((ticks==0) || (tick_count<ticks))
+# define should_continue() (!exit_immediately && ((ticks==0) || (tick_count<ticks)))
 
   register byte  *memory= mpu->memory;
   register word   PC;
@@ -826,6 +834,7 @@ uint64_t M6502_run(M6502 *mpu, uint64_t ticks)
   uint64_t        tick_count = 0;
   struct timespec expected_loop_start;
   struct timespec now, delta;
+  int             exit_immediately = 0;
 
 # define internalise()  A= mpu->registers->a;  X= mpu->registers->x;  Y= mpu->registers->y;  P= mpu->registers->p;  S= mpu->registers->s;  PC= mpu->registers->pc
 # define externalise()  mpu->registers->a= A;  mpu->registers->x= X;  mpu->registers->y= Y;  mpu->registers->p= P;  mpu->registers->s= S;  mpu->registers->pc= PC
@@ -841,7 +850,13 @@ uint64_t M6502_run(M6502 *mpu, uint64_t ticks)
     struct timespec expected_loop_end = expected_loop_start, expected_loop_duration;
 
     /* begin(); */
-    while(tick_count < next_ticks) {
+    while((tick_count < next_ticks) && (tick_count < ticks)) {
+      /* was exit requested? */
+      if(__sync_fetch_and_and(&mpu->request_flags, ~((unsigned int)requestExit)) & requestExit) {
+        exit_immediately = 1;
+        break;
+      }
+
       /* was IRQ requested? */
       if(__sync_fetch_and_and(&mpu->request_flags, ~((unsigned int)requestIRQ)) & requestIRQ) {
         /* yes, perform one */
@@ -856,6 +871,9 @@ uint64_t M6502_run(M6502 *mpu, uint64_t ticks)
       }
     }
     /* end(); */
+
+    /* exit immediately if we've reached the tick count */
+    if(tick_count >= ticks) { break; }
 
     /* how long should this loop have taken in reality? */
     expected_loop_duration.tv_sec = 0;

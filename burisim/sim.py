@@ -11,7 +11,6 @@ from itertools import cycle
 import logging
 import threading
 import time
-import weakref
 
 from past.builtins import basestring # pylint: disable=redefined-builtin
 
@@ -42,9 +41,8 @@ class BuriSim(object):
         # Create our processor
         self.mpu = M6502()
         self._mpu_lock = threading.Lock()
-        self._mpu_thread = threading.Thread(
-            target=_sim_loop, args=(weakref.ref(self),)
-        )
+        self._mpu_thread = None
+        self._want_stop = True
 
         # Register ROM as read-only
         def raise_rom_exception(addr, value):
@@ -147,7 +145,27 @@ class BuriSim(object):
             self.mpu.reset()
 
     def start(self):
+        # ensure we're stopped!
+        self.stop()
+
+        # create and start thread
+        self._mpu_thread = threading.Thread(
+            target=_sim_loop, args=(self,)
+        )
+        self._want_stop = False
         self._mpu_thread.start()
+
+    def stop(self):
+        if self._mpu_thread is None or not self._mpu_thread.is_alive():
+            # we're not running
+            return
+
+        # signal stop
+        self._want_stop = True
+        self.mpu.exit()
+
+        # wait for thread
+        self._mpu_thread.join()
 
     def step(self, ticks):
         """Single-cycle the machine for a specified number of clock ticks."""
@@ -155,16 +173,12 @@ class BuriSim(object):
         with self._mpu_lock:
             return self.mpu.run(ticks)
 
-def _sim_loop(self_wr):
+def _sim_loop(sim):
     ticks_per_loop = 1000000 # should mean the loop is around 0.5Hz.
     last_report = time.time()
     n_ticks = 0
-    while True:
-        self = self_wr()
-        if self is None:
-            break
-
-        n_ticks += self.step(ticks_per_loop)
+    while not sim._want_stop:
+        n_ticks += sim.step(ticks_per_loop)
         now = time.time()
 
         if now > last_report + 5:

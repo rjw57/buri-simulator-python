@@ -149,6 +149,14 @@ class M6502(object):
         """
         lib.M6502_irq(self._mpu)
 
+    def exit(self):
+        """Cause the current call to run() to exit ASAP. If no call to run() is
+        currently in progress, the next one will return.
+
+        This call is thread-safe.
+        """
+        lib.M6502_exit(self._mpu)
+
     @property
     def rst_vector(self):
         return lib.M6502_getRSTVector(self._mpu)

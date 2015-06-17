@@ -117,6 +117,9 @@ ffi.cdef("""
     void
     M6502_irq(M6502 *mpu);
 
+    void
+    M6502_exit(M6502 *mpu);
+
     typedef int   (*M6502_Callback)(M6502 *mpu, uint16_t address, uint8_t data);
 
     M6502_Callback

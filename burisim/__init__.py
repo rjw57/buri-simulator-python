@@ -41,8 +41,7 @@ from burisim.sim import BuriSim
 
 _LOGGER = logging.getLogger(__name__)
 
-# called after Qt main loop is running
-def start():
+def create_sim():
     opts = docopt(__doc__)
     logging.basicConfig(
         level=logging.WARN if opts['--quiet'] else logging.INFO,
@@ -65,16 +64,21 @@ def start():
     # Reset the simulator
     sim.reset()
 
-    # Start simulating
-    sim.start()
+    return sim
 
 def main():
     app = QtCore.QCoreApplication(sys.argv)
-    QtCore.QTimer.singleShot(0, start)
+    sim = create_sim()
+
+    # Start simulating once event loop is running
+    QtCore.QTimer.singleShot(0, sim.start)
+
+    # Stop simulating when app is quitting
+    app.aboutToQuit.connect(sim.stop)
 
     # Wire up Ctrl-C to quit app.
     def interrupt(*args):
-        print('received interrupt, exitting...')
+        print('received interrupt signal, exitting...')
         app.quit()
     signal.signal(signal.SIGINT, interrupt)
 
