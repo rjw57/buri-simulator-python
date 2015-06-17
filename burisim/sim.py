@@ -148,10 +148,18 @@ class BuriSim(object):
         # ensure we're stopped!
         self.stop()
 
+        # create simulator loop function
+        def loop():
+            ticks_per_loop = int(5*2e6) # should mean the loop is around 5Hz.
+            last_report, n_ticks = time.time(), 0
+            while not self._want_stop:
+                n_ticks += self.step(ticks_per_loop)
+                now = time.time()
+                print('Running at {0:d}Hz'.format(int(n_ticks / (now - last_report))))
+                last_report, n_ticks = now, 0
+
         # create and start thread
-        self._mpu_thread = threading.Thread(
-            target=_sim_loop, args=(self,)
-        )
+        self._mpu_thread = threading.Thread(target=loop)
         self._want_stop = False
         self._mpu_thread.start()
 
@@ -172,18 +180,3 @@ class BuriSim(object):
         # TODO: tracing
         with self._mpu_lock:
             return self.mpu.run(ticks)
-
-def _sim_loop(sim):
-    ticks_per_loop = 1000000 # should mean the loop is around 0.5Hz.
-    last_report = time.time()
-    n_ticks = 0
-    while not sim._want_stop:
-        n_ticks += sim.step(ticks_per_loop)
-        now = time.time()
-
-        if now > last_report + 5:
-            print('Running at {0:d}Hz'.format(
-                int(n_ticks / (now - last_report))
-            ))
-            last_report = now
-            n_ticks = 0
