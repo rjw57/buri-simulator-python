@@ -160,6 +160,10 @@ class BuriSim(object):
                 self.mpu.memory[addr + off] = val
 
     def reset(self):
+        was_running = self.is_running()
+        if was_running:
+            self.stop()
+
         """Perform a hardware reset."""
         # Reset hardware
         self.acia1.hw_reset()
@@ -167,6 +171,9 @@ class BuriSim(object):
         # Reset MPU
         with self._mpu_lock:
             self.mpu.reset()
+
+        if was_running:
+            self.start()
 
     def start(self):
         # ensure we're stopped!
@@ -187,8 +194,11 @@ class BuriSim(object):
         self._want_stop = False
         self._mpu_thread.start()
 
+    def is_running(self):
+        return self._mpu_thread is not None and self._mpu_thread.is_alive()
+
     def stop(self):
-        if self._mpu_thread is None or not self._mpu_thread.is_alive():
+        if not self.is_running():
             # we're not running
             return
 
