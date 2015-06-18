@@ -8,6 +8,7 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
 )
 
 import struct
+import threading
 
 from PySide import QtCore, QtGui
 import pyte
@@ -21,48 +22,46 @@ class TerminalView(QtGui.QWidget):
         self.stream = pyte.ByteStream()
         self.stream.attach(self.screen)
 
-        self._input_buffer = b''
-        self._will_update = False
-
-        self._resized()
-
-    @QtCore.Slot(int)
-    def receiveByte(self, b):
-        self._input_buffer += struct.pack('B', b)
-        if not self._will_update:
-            self._will_update = True
-            QtCore.QTimer.singleShot(10, self._have_input)
-
-    def _have_input(self):
-        self.stream.feed(self._input_buffer)
-        self._input_buffer = b''
-        self._will_update = False
-        self.update()
-
-    def sizeHint(self):
-        size = self.screen.size
-        return QtCore.QSize(
-            self.charSize.width() * size[1],
-            self.charSize.height() * size[0]
+        self._input_buffer_lock = threading.Lock()
+        self._input_buffer = QtCore.QBuffer()
+        self._input_buffer.bytesWritten.connect(self._have_input)
+        self._input_buffer.open(
+            QtCore.QIODevice.WriteOnly | QtCore.QIODevice.Unbuffered
         )
 
-    def paintEvent(self, _):
-        p = QtGui.QPainter()
+        l = QtGui.QVBoxLayout()
+        self.setLayout(l)
 
-        assert p.begin(self)
-        s = self.sizeHint()
-        p.fillRect(0, 0, s.width(), s.height(), QtGui.qRgb(0, 0, 0))
-        p.setPen(QtGui.qRgb(255, 255, 255))
-        for row, row_contents in enumerate(self.screen.buffer):
-            y = (row+1) * self.charSize.height()
-            for col, char in enumerate(row_contents):
-                x = col * self.charSize.width()
-                p.drawText(x, y, char.data)
+        p = QtGui.QPalette()
+        p.setColor(QtGui.QPalette.Base, QtCore.Qt.black)
+        p.setColor(QtGui.QPalette.Text, QtCore.Qt.green)
 
-        p.end()
+        self._te = QtGui.QPlainTextEdit()
+        self._te.setPalette(p)
+        self._te.setLineWrapMode(QtGui.QPlainTextEdit.NoWrap)
+        self._te.setFont(QtGui.QFont('Monospace'))
+        l.addWidget(self._te)
 
-    def _resized(self):
-        self.setMinimumSize(self.sizeHint())
+    def receiveByte(self, b):
+        with self._input_buffer_lock:
+            self._input_buffer.putChar(b)
+            # HACK: there should be a better way!
+            self._input_buffer.bytesWritten.emit(1)
+
+    def _have_input(self):
+        with self._input_buffer_lock:
+            self._input_buffer.close()
+            bs = b''.join(self._input_buffer.data())
+            self._input_buffer.setData(b'')
+            self._input_buffer.open(
+                QtCore.QIODevice.WriteOnly | QtCore.QIODevice.Unbuffered
+            )
+
+        self.stream.feed(bs)
+        self._te.setPlainText('\n'.join(
+            ''.join(x.data for x in line)
+            for line in self.screen.buffer
+        ))
 
 class HD44780View(QtGui.QWidget):
     def __init__(self, *args, **kwargs):

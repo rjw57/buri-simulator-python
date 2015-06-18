@@ -66,14 +66,11 @@ def attach_file_to_acia(acia, filename):
 
     def have_input():
         bs = sp.read(1)
-        acia.receiveByte(struct.unpack('B', bs[0])[0])
+        acia.receive_byte(struct.unpack('B', bs[0])[0])
     sn = QtCore.QSocketNotifier(sp.handle(), QtCore.QSocketNotifier.Read)
     sn.activated.connect(have_input)
 
-    @QtCore.Slot(int)
-    def have_output(v):
-        sp.putChar(v)
-    acia.transmitByte.connect(have_output)
+    acia.register_listener(sp.putChar)
 
     # HACK: stop sp and sn being garbage collected
     acia._stashed_notifier = (sp, sn)
@@ -100,15 +97,15 @@ def main():
     # Create the main simulator and attach it to application quit events.
     sim = create_sim(opts)
 
-    # Start simulating once event loop is running
-    QtCore.QTimer.singleShot(0, sim.start)
-
     # Stop simulating when app is quitting
     app.aboutToQuit.connect(sim.stop)
 
     # Create the sim UI if requested
     if not opts['--no-gui']:
         ui = create_ui(sim)
+
+    # Start simulating once event loop is running
+    QtCore.QTimer.singleShot(0, sim.start)
 
     # Start the application
     sys.exit(app.exec_())

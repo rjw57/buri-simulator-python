@@ -7,7 +7,7 @@ from PySide import QtCore
 
 _LOGGER = logging.getLogger(__name__)
 
-class ACIA(QtCore.QObject):
+class ACIA(object):
     """Emulation of 6551-style ACIA. Optionally pass a PySerial-compatible
     object which will be the serial port connected to the ACIA.
 
@@ -17,13 +17,11 @@ class ACIA(QtCore.QObject):
     _ST_TDRE = 0b00010000
     _ST_RDRF = 0b00001000
 
-    transmitByte = QtCore.Signal(int)
-
-    def __init__(self, *args, **kwargs):
-        super(ACIA, self).__init__(*args, **kwargs)
-
+    def __init__(self):
         # Callbacks
         self.irq_cb = None
+
+        self._listeners = []
 
         # Registers
         self._recv_data = 0
@@ -41,7 +39,10 @@ class ACIA(QtCore.QObject):
     def irq(self):
         return self._status_reg & ACIA._ST_IRQ != 0
 
-    def receiveByte(self, b):
+    def register_listener(self, l):
+        self._listeners.append(l)
+
+    def receive_byte(self, b):
         """Called when the device has received a byte from the outside world."""
         self._input_queue.put(b)
         self.poll()
@@ -143,7 +144,8 @@ class ACIA(QtCore.QObject):
         self._status_reg &= ~(ACIA._ST_TDRE)
 
         # Write output
-        self.transmitByte.emit(value)
+        for l in self._listeners:
+            l(value)
 
         # Set transmit data empty reg
         self._status_reg |= ACIA._ST_TDRE

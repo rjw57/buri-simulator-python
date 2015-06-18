@@ -157,7 +157,7 @@ def create_ui(sim):
     mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dw)
 
     v = TerminalView()
-    sim.acia1.transmitByte.connect(v.receiveByte)
+    sim.acia1.register_listener(v.receiveByte)
     dw = QtGui.QDockWidget("Serial console")
     dw.setWidget(v)
     mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, dw)
