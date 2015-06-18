@@ -40,6 +40,39 @@ from burisim.hw.hd44780 import HD44780View
 
 _LOGGER = logging.getLogger(__name__)
 
+class HexSpinBox(QtGui.QSpinBox):
+    def __init__(self, *args, **kwargs):
+        super(HexSpinBox, self).__init__(*args, **kwargs)
+        self._padding = None
+
+    def padding(self):
+        return self._padding
+
+    def setPadding(self, p):
+        self._padding = int(p)
+
+    def textFromValue(self, v):
+        if self._padding is not None and self._padding > 0:
+            f = '{0:0' + str(self._padding) + 'X}'
+            return f.format(v)
+        return ('{0:X}').format(v)
+
+    def valueFromText(self, t):
+        return int(t, 16)
+
+    def validate(self, t, pos):
+        if t.startswith(self.prefix()):
+            t = t[len(self.prefix()):]
+        if t.endswith(self.suffix()) and len(self.suffix()) > 0:
+            t = t[:-len(self.suffix())]
+        if t == '':
+            return QtGui.QValidator.Intermediate
+        try:
+            int(t, 16)
+            return QtGui.QValidator.Acceptable
+        except:
+            return QtGui.QValidator.Invalid
+
 class MemoryView(QtGui.QWidget):
     def __init__(self, *args, **kwargs):
         super(MemoryView, self).__init__(*args, **kwargs)
@@ -54,10 +87,15 @@ class MemoryView(QtGui.QWidget):
         self._page = v
         self._refresh_mem()
 
+    @QtCore.Slot(int)
+    def _spinValueChanged(self, v):
+        self.setPage(v)
+
     def _init_ui(self):
         l = QtGui.QVBoxLayout()
         self.setLayout(l)
-        l.setContentsMargins(0,0,0,0)
+        l.setSpacing(0)
+        l.setContentsMargins(0, 0, 0, 0)
 
         te = QtGui.QTextEdit()
         te.setReadOnly(True)
@@ -67,12 +105,24 @@ class MemoryView(QtGui.QWidget):
         l.addWidget(te)
         self._te = te
 
+        h = QtGui.QHBoxLayout()
+        h.setSpacing(5)
+        h.addWidget(QtGui.QLabel("Page:"))
+        sb = HexSpinBox()
+        sb.setPrefix('0x')
+        sb.setPadding(2)
+        sb.setRange(0, 0xff)
+        sb.setSizePolicy(
+            QtGui.QSizePolicy.MinimumExpanding,
+            QtGui.QSizePolicy.Preferred,
+        )
+        sb.valueChanged.connect(self._spinValueChanged)
+        h.addWidget(sb)
+        l.addLayout(h)
+
         self._refresh_timer = QtCore.QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_mem)
         self._refresh_timer.start(66) # run at approx ~15Hz
-
-    def sizeHint(self):
-        return self._te.document().size().toSize()
 
     def _refresh_mem(self):
         if self.simulator is None:
@@ -80,7 +130,7 @@ class MemoryView(QtGui.QWidget):
 
         def mem_contents():
             m = self.simulator.memory
-            start = 0x100 + self._page*0x100
+            start = 0x100 * self._page
             for line_offset in range(0x000, 0x100, 0x010):
                 contents = m[start + line_offset:start + line_offset+0x010]
                 yield line_offset, contents
@@ -105,27 +155,16 @@ class MemoryView(QtGui.QWidget):
         ))
         self._te.setHtml('<pre><code>' + cgi.escape(dump) + '</code></pre>')
 
+        self._te.setMinimumSize(self._te.document().size().toSize())
+
 class SimulatorUI(object):
     def __init__(self, sim):
         # Assign simulator
         self.sim = sim
 
         # Create memory view
-        self._mv = QtGui.QWidget()
-        l = QtGui.QVBoxLayout()
-        self._mv.setLayout(l)
-
-        mv = MemoryView()
-        mv.simulator = self.sim
-        l.addWidget(mv)
-
-        sp = QtGui.QSpinBox()
-        sp.setMinimum(0)
-        sp.setMaximum(0xff)
-        sp.valueChanged.connect(lambda v: mv.setPage(v))
-        l.addWidget(sp)
-
-        self._mv.adjustSize()
+        self._mv = MemoryView()
+        self._mv.simulator = self.sim
         self._mv.show()
         self._mv.setWindowTitle("Memory")
 
