@@ -7,7 +7,7 @@ from PySide import QtCore
 
 _LOGGER = logging.getLogger(__name__)
 
-class ACIA(object):
+class ACIA(QtCore.QObject):
     """Emulation of 6551-style ACIA. Optionally pass a PySerial-compatible
     object which will be the serial port connected to the ACIA.
 
@@ -17,10 +17,10 @@ class ACIA(object):
     _ST_TDRE = 0b00010000
     _ST_RDRF = 0b00001000
 
-    def __init__(self, serial_port=None):
-        self.serial_port = None
-        if serial_port is not None:
-            self.connect_to_file(serial_port)
+    transmitByte = QtCore.Signal(int)
+
+    def __init__(self, *args, **kwargs):
+        super(ACIA, self).__init__(*args, **kwargs)
 
         # Callbacks
         self.irq_cb = None
@@ -41,6 +41,11 @@ class ACIA(object):
     def irq(self):
         return self._status_reg & ACIA._ST_IRQ != 0
 
+    def receiveByte(self, b):
+        """Called when the device has received a byte from the outside world."""
+        self._input_queue.put(b)
+        self.poll()
+
     def poll(self):
         """Call regularly to check for incoming data."""
         if self._status_reg & ACIA._ST_RDRF != 0:
@@ -54,27 +59,6 @@ class ACIA(object):
                 self._trigger_irq()
         except queue.Empty:
             pass
-
-    def _data_available(self):
-        bs = self.serial_port.read(1)[0]
-        self._input_queue.put(struct.unpack('B', bs)[0])
-        self.poll()
-
-    def connect_to_file(self, filename):
-        """Open a file which will be used as the serial port for the ACIA.
-
-        """
-        self.serial_port = QtCore.QFile(filename)
-        ok = self.serial_port.open(
-            QtCore.QIODevice.ReadWrite | QtCore.QIODevice.Unbuffered
-        )
-        if not ok:
-            raise ValueError('failed to open %s' % filename)
-        self._notifier = QtCore.QSocketNotifier(
-            self.serial_port.handle(), QtCore.QSocketNotifier.Read
-        )
-        self._notifier.activated.connect(self._data_available)
-        self._update_serial_port()
 
     def hw_reset(self):
         """Perform a hardware reset."""
@@ -159,8 +143,7 @@ class ACIA(object):
         self._status_reg &= ~(ACIA._ST_TDRE)
 
         # Write output
-        if self.serial_port is not None:
-            self.serial_port.putChar(value) # write(struct.pack('B', value))
+        self.transmitByte.emit(value)
 
         # Set transmit data empty reg
         self._status_reg |= ACIA._ST_TDRE

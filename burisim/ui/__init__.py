@@ -11,7 +11,7 @@ import cgi
 
 from PySide import QtCore, QtGui
 
-from .display import HD44780View
+from .display import HD44780View, TerminalView
 
 class HexSpinBox(QtGui.QSpinBox):
     def __init__(self, *args, **kwargs):
@@ -148,11 +148,17 @@ def create_ui(sim):
     v.simulator = sim
     dw = QtGui.QDockWidget("Memory monitor")
     dw.setWidget(v)
-    mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, dw)
+    mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dw)
 
     v = HD44780View()
     v.display = sim.display
     dw = QtGui.QDockWidget("Display")
+    dw.setWidget(v)
+    mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dw)
+
+    v = TerminalView()
+    sim.acia1.transmitByte.connect(v.receiveByte)
+    dw = QtGui.QDockWidget("Serial console")
     dw.setWidget(v)
     mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, dw)
 

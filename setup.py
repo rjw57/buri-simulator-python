@@ -15,6 +15,7 @@ setup(
         'future',
         'intervaltree',
         'pyside',
+        'pyte',
     ],
     entry_points={
         'console_scripts': [

@@ -12,7 +12,7 @@ Options:
     --no-gui            Don't create GUI.
 
 Hardware options:
-    --serial URL        Connect ACIA1 to this serial port. [default: loop://]
+    --serial URL        Connect ACIA1 to this serial port.
     --load FILE         Pre-load FILE at location 0x5000 in RAM.
 
 """
@@ -29,6 +29,7 @@ from past.builtins import basestring # pylint: disable=redefined-builtin
 import cgi
 import logging
 import signal
+import struct
 import sys
 
 from docopt import docopt
@@ -43,19 +44,39 @@ def create_sim(opts):
     # Create simulator
     sim = BuriSim()
 
-    # Create serial port
-    sim.acia1.connect_to_file(opts['--serial'])
-
     # Read ROM
     sim.load_rom(opts['<rom>'])
 
     if opts['--load'] is not None:
         sim.load_ram(opts['--load'], 0x5000)
 
+    if opts['--serial'] is not None:
+        attach_file_to_acia(sim.acia1, opts['--serial'])
+
     # Reset the simulator
     sim.reset()
 
     return sim
+
+def attach_file_to_acia(acia, filename):
+    sp = QtCore.QFile(filename)
+    ok = sp.open(QtCore.QIODevice.ReadWrite | QtCore.QIODevice.Unbuffered)
+    if not ok:
+        raise ValueError('failed to open %s' % filename)
+
+    def have_input():
+        bs = sp.read(1)
+        acia.receiveByte(struct.unpack('B', bs[0])[0])
+    sn = QtCore.QSocketNotifier(sp.handle(), QtCore.QSocketNotifier.Read)
+    sn.activated.connect(have_input)
+
+    @QtCore.Slot(int)
+    def have_output(v):
+        sp.putChar(v)
+    acia.transmitByte.connect(have_output)
+
+    # HACK: stop sp and sn being garbage collected
+    acia._stashed_notifier = (sp, sn)
 
 def main():
     opts = docopt(__doc__)

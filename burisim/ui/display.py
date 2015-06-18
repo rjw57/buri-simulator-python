@@ -7,7 +7,62 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
     filter, map, zip
 )
 
+import struct
+
 from PySide import QtCore, QtGui
+import pyte
+
+class TerminalView(QtGui.QWidget):
+    def __init__(self, *args, **kwargs):
+        super(TerminalView, self).__init__()
+        self.screen = pyte.Screen(80, 24)
+        self.charSize = QtCore.QSize(8, 12)
+
+        self.stream = pyte.ByteStream()
+        self.stream.attach(self.screen)
+
+        self._input_buffer = b''
+        self._will_update = False
+
+        self._resized()
+
+    @QtCore.Slot(int)
+    def receiveByte(self, b):
+        self._input_buffer += struct.pack('B', b)
+        if not self._will_update:
+            self._will_update = True
+            QtCore.QTimer.singleShot(10, self._have_input)
+
+    def _have_input(self):
+        self.stream.feed(self._input_buffer)
+        self._input_buffer = b''
+        self._will_update = False
+        self.update()
+
+    def sizeHint(self):
+        size = self.screen.size
+        return QtCore.QSize(
+            self.charSize.width() * size[1],
+            self.charSize.height() * size[0]
+        )
+
+    def paintEvent(self, _):
+        p = QtGui.QPainter()
+
+        assert p.begin(self)
+        s = self.sizeHint()
+        p.fillRect(0, 0, s.width(), s.height(), QtGui.qRgb(0, 0, 0))
+        p.setPen(QtGui.qRgb(255, 255, 255))
+        for row, row_contents in enumerate(self.screen.buffer):
+            y = (row+1) * self.charSize.height()
+            for col, char in enumerate(row_contents):
+                x = col * self.charSize.width()
+                p.drawText(x, y, char.data)
+
+        p.end()
+
+    def _resized(self):
+        self.setMinimumSize(self.sizeHint())
 
 class HD44780View(QtGui.QWidget):
     def __init__(self, *args, **kwargs):
