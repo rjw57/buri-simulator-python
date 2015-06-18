@@ -157,6 +157,24 @@ class MemoryView(QtGui.QWidget):
 
         self._te.setMinimumSize(self._te.document().size().toSize())
 
+class ControlPanel(QtGui.QWidget):
+    def __init__(self, *args, **kwargs):
+        super(ControlPanel, self).__init__(*args, **kwargs)
+        self._reset_action = QtGui.QAction("Reset", self)
+        self._init_ui()
+
+    def resetAction(self):
+        return self._reset_action
+
+    def _init_ui(self):
+        l = QtGui.QHBoxLayout()
+        self.setLayout(l)
+
+        self._reset_button = QtGui.QToolButton()
+        self._reset_button.setDefaultAction(self._reset_action)
+        self._reset_button.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
+        l.addWidget(self._reset_button)
+
 class SimulatorUI(object):
     def __init__(self, sim):
         # Assign simulator
@@ -165,14 +183,20 @@ class SimulatorUI(object):
         # Create memory view
         self._mv = MemoryView()
         self._mv.simulator = self.sim
-        self._mv.show()
         self._mv.setWindowTitle("Memory")
+        self._mv.show()
 
         # Create lcd view
         self._lcd = HD44780View()
         self._lcd.display = self.sim.display
-        self._lcd.show()
         self._lcd.setWindowTitle("Display")
+        self._lcd.show()
+
+        # Create control panel
+        self._cp = ControlPanel()
+        self._cp.setWindowTitle("Control panel")
+        self._cp.resetAction().triggered.connect(sim.reset)
+        self._cp.show()
 
 def create_sim(opts):
     # Create simulator
