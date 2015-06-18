@@ -44,8 +44,11 @@ class TerminalView(QtGui.QWidget):
 
     def receiveByte(self, b):
         with self._input_buffer_lock:
+            send_event = len(self._input_buffer.data()) == 0
             self._input_buffer.putChar(b)
-            # HACK: there should be a better way!
+
+        # HACK: there should be a better way!
+        if send_event:
             self._input_buffer.bytesWritten.emit(1)
 
     def _have_input(self):
