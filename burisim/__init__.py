@@ -94,7 +94,7 @@ class MemoryView(QtGui.QWidget):
     def _init_ui(self):
         l = QtGui.QVBoxLayout()
         self.setLayout(l)
-        l.setSpacing(0)
+        l.setSpacing(5)
         l.setContentsMargins(0, 0, 0, 0)
 
         te = QtGui.QTextEdit()
@@ -142,61 +142,49 @@ class MemoryView(QtGui.QWidget):
                 for o in range(0, len(contents), 8)
             )
             asciirepr = ''.join(chr(b) if b>=32 and b<127 else '.' for b  in contents)
-            return '{0:04X}  {1:48}  |{2:16}|'.format(
-                self._page*0x100 + offset, hexrepr, asciirepr
+            return '<strong><code>{0:04X}</code></strong><code>  {1:48}  |{2:16}|</code>'.format(
+                self._page*0x100 + offset, hexrepr, cgi.escape(asciirepr)
             )
 
-        dump = ''.join((
-            '      {0}  {1}\n'.format(
-                ' '.join('{0:02X}'.format(x) for x in range(0, 8)),
-                ' '.join('{0:02X}'.format(x) for x in range(8, 16)),
-            ),
+        self._te.setHtml(''.join((
+            '<pre>',
+            ''.join((
+                '<strong><code>',
+                '      {0}  {1}\n'.format(
+                    ' '.join('{0:02X}'.format(x) for x in range(0, 8)),
+                    ' '.join('{0:02X}'.format(x) for x in range(8, 16)),
+                ),
+                '</code></strong>',
+            )),
             '\n'.join(render_line(o, c) for o, c in mem_contents()),
-        ))
-        self._te.setHtml('<pre><code>' + cgi.escape(dump) + '</code></pre>')
+            '</pre>',
+        )))
 
         self._te.setMinimumSize(self._te.document().size().toSize())
 
-class ControlPanel(QtGui.QWidget):
-    def __init__(self, *args, **kwargs):
-        super(ControlPanel, self).__init__(*args, **kwargs)
-        self._reset_action = QtGui.QAction("Reset", self)
-        self._init_ui()
+def create_ui(sim):
+    mw = QtGui.QMainWindow()
 
-    def resetAction(self):
-        return self._reset_action
+    tb = mw.addToolBar("Simulator")
 
-    def _init_ui(self):
-        l = QtGui.QHBoxLayout()
-        self.setLayout(l)
+    a = QtGui.QAction("Reset", mw)
+    a.triggered.connect(sim.reset)
+    tb.addAction(a)
 
-        self._reset_button = QtGui.QToolButton()
-        self._reset_button.setDefaultAction(self._reset_action)
-        self._reset_button.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
-        l.addWidget(self._reset_button)
+    v = MemoryView()
+    v.simulator = sim
+    dw = QtGui.QDockWidget("Memory monitor")
+    dw.setWidget(v)
+    mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, dw)
 
-class SimulatorUI(object):
-    def __init__(self, sim):
-        # Assign simulator
-        self.sim = sim
+    v = HD44780View()
+    v.display = sim.display
+    dw = QtGui.QDockWidget("Display")
+    dw.setWidget(v)
+    mw.addDockWidget(QtCore.Qt.RightDockWidgetArea, dw)
 
-        # Create memory view
-        self._mv = MemoryView()
-        self._mv.simulator = self.sim
-        self._mv.setWindowTitle("Memory")
-        self._mv.show()
-
-        # Create lcd view
-        self._lcd = HD44780View()
-        self._lcd.display = self.sim.display
-        self._lcd.setWindowTitle("Display")
-        self._lcd.show()
-
-        # Create control panel
-        self._cp = ControlPanel()
-        self._cp.setWindowTitle("Control panel")
-        self._cp.resetAction().triggered.connect(sim.reset)
-        self._cp.show()
+    mw.show()
+    return mw
 
 def create_sim(opts):
     # Create simulator
@@ -246,7 +234,7 @@ def main():
 
     # Create the sim UI if requested
     if not opts['--no-gui']:
-        ui = SimulatorUI(sim)
+        ui = create_ui(sim)
 
     # Start the application
     sys.exit(app.exec_())
