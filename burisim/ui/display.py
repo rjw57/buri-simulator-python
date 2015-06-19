@@ -84,6 +84,14 @@ class TerminalView(QtGui.QWidget):
             for line in self.screen.buffer
         ))
 
+    def minimumSize(self):
+        return self.sizeHint()
+
+    def sizeHint(self):
+        fm = self.fontMetrics()
+        h, w = self.screen.size
+        return QtCore.QSize(fm.width('X') * w, fm.height() * h)
+
 class HD44780View(QtGui.QWidget):
     def __init__(self, *args, **kwargs):
         super(HD44780View, self).__init__()
