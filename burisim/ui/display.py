@@ -13,6 +13,61 @@ import threading
 from PySide import QtCore, QtGui
 import pyte
 
+class ScreenView(QtGui.QWidget):
+    def __init__(self, *args, **kwargs):
+        super(ScreenView, self).__init__()
+        self._screen = None
+
+    @property
+    def screen(self):
+        return self._screen
+
+    @screen.setter
+    def screen(self, v):
+        self._screen = v
+        self._adjust_to_screen()
+
+    def contents_changed(self):
+        self.update()
+
+    def _adjust_to_screen(self):
+        self.updateGeometry()
+
+    def paintEvent(self, _):
+        if self._screen is None:
+            return
+
+        fm = self.fontMetrics()
+
+        cw, ch = fm.width('X'), fm.lineSpacing()
+        y0 = fm.height()
+        h, w = self._screen.size
+
+        p = QtGui.QPainter()
+        assert p.begin(self)
+
+        p.fillRect(0, 0, w*cw, h*ch, QtGui.qRgb(0, 0, 0))
+
+        p.setPen(QtGui.qRgb(255, 255, 255))
+        for y, line in enumerate(self._screen.buffer):
+            py = y * ch + y0
+            for x, char in enumerate(line):
+                px = x * cw
+                p.drawText(px, py, char.data)
+
+        p.end()
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        if self._screen is None:
+            return QtCore.QSize(0,0)
+
+        fm = self.fontMetrics()
+        h, w = self._screen.size
+        return QtCore.QSize(w*fm.width('X'), h*fm.lineSpacing())
+
 class TerminalView(QtGui.QWidget):
     transmitByte = QtCore.Signal(int)
 
@@ -31,72 +86,27 @@ class TerminalView(QtGui.QWidget):
             QtCore.QIODevice.WriteOnly | QtCore.QIODevice.Unbuffered
         )
 
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+
         l = QtGui.QVBoxLayout()
         self.setLayout(l)
-
-        p = QtGui.QPalette()
-        p.setColor(QtGui.QPalette.Base, QtCore.Qt.black)
-        p.setColor(QtGui.QPalette.Text, QtCore.Qt.green)
-
-        # configure the underlying textedit class representing the screen
-        self._te = QtGui.QPlainTextEdit()
-        self._te.setReadOnly(True)
-        self._te.setPalette(p)
-        self._te.setLineWrapMode(QtGui.QPlainTextEdit.NoWrap)
-        self._te.setFont(QtGui.QFont('Monospace'))
-        l.addWidget(self._te)
-
-        self._te.installEventFilter(self)
-
-        # event driven input
-        self._input_buffer.readyRead.connect(self._have_input)
-
-        # fallback timer polling input buffer since above event is a little
-        # unreliable. This is hacky but I want to ge thte job done :(.
-        self._refresh_timer = QtCore.QTimer(self)
-        self._refresh_timer.timeout.connect(self._have_input)
-        self._refresh_timer.start(50)
-
-        for l in self.screen.buffer:
-            self._insert_line(l)
-
-    def _insert_line(self, line):
-        """Insert a line of pyte.Char objects at the current cursor position."""
-        c = self._te.textCursor()
-        c.insertText(''.join(x.data for x in line))
-        c.insertText('\n')
-
-    def _update_screen(self):
-        for line_num in self.screen.dirty:
-            c = self._te.textCursor()
-            c.movePosition(QtGui.QTextCursor.Start)
-            c.movePosition(QtGui.QTextCursor.Down, n=line_num)
-            c.select(QtGui.QTextCursor.LineUnderCursor)
-            c.removeSelectedText()
-            c.deleteChar()
-            self._te.setTextCursor(c)
-            self._te.setOverwriteMode(True)
-            self._insert_line(self.screen.buffer[line_num])
-        self.screen.dirty = set()
+        self._screen_view = ScreenView()
+        self._screen_view.screen = self.screen
+        self._screen_view.installEventFilter(self)
+        self._screen_view.setFont(QtGui.QFont('Monospace'))
+        l.addWidget(self._screen_view)
 
     def receiveByte(self, b):
         with self._input_buffer_lock:
             self._input_buffer.putChar(b)
 
-    def eventFilter(self, recv, e):
-        if recv is not self._te:
-            return False
-        if e.type() == QtCore.QEvent.KeyRelease:
-            t = e.text()
-            if t == '':
-                return False
+    def keyReleaseEvent(self, e):
+        t = e.text()
+        if t == '':
+            return super(TerminalView, self).keyReleaseEvent(e)
 
-            for c in t:
-                self.transmitByte.emit(ord(c))
-
-            return True
-
-        return False
+        for c in t:
+            self.transmitByte.emit(ord(c))
 
     def _have_input(self):
         with self._input_buffer_lock:
@@ -108,15 +118,7 @@ class TerminalView(QtGui.QWidget):
             )
 
         self.stream.feed(bs)
-        self._update_screen()
-
-    def minimumSize(self):
-        return self.sizeHint()
-
-    def sizeHint(self):
-        fm = self.fontMetrics()
-        h, w = self.screen.size
-        return QtCore.QSize(fm.width('X') * w, fm.height() * h)
+        self._screen_view.contents_changed()
 
 class HD44780View(QtGui.QWidget):
     def __init__(self, *args, **kwargs):
