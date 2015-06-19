@@ -175,6 +175,9 @@ class HD44780View(QtGui.QWidget):
         self._display.update.connect(self._display_update)
         self.update()
 
+    def minimumSize(self):
+        return self.sizeHint()
+
     def sizeHint(self):
         if len(self._font) > 0:
             w = self._font[0].size().width()
@@ -239,7 +242,7 @@ class HD44780View(QtGui.QWidget):
 
         # render char rom font
         self._font = list(render_char(c) for c in CHAR_ROM)
-        self.adjustSize()
+        self.updateGeometry()
 
 CHAR_ROM = [
     [0, 0, 0, 0, 0, 0, 0],
