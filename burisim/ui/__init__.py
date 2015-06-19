@@ -51,6 +51,7 @@ class MemoryView(QtGui.QWidget):
         super(MemoryView, self).__init__(*args, **kwargs)
         self.simulator = None
         self._page = 0
+        self._cached_page_contents = None
         self._init_ui()
 
     def page(self):
@@ -100,6 +101,19 @@ class MemoryView(QtGui.QWidget):
     def _refresh_mem(self):
         if self.simulator is None:
             return
+
+        page_size = 0x100
+        page_offset = page_size * self._page
+        current_page = list(
+            self.simulator.memory[page_offset:page_offset+page_size]
+        )
+        cpc = self._cached_page_contents
+        if cpc is not None and cpc == current_page:
+            # no change
+            return
+
+        # record page contents
+        self._cached_page_contents = current_page
 
         def mem_contents():
             m = self.simulator.memory
