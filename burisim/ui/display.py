@@ -18,7 +18,7 @@ class TerminalView(QtGui.QWidget):
 
     def __init__(self, *args, **kwargs):
         super(TerminalView, self).__init__()
-        self.screen = pyte.Screen(80, 24)
+        self.screen = pyte.DiffScreen(80, 24)
         self.charSize = QtCore.QSize(8, 12)
 
         self.stream = pyte.ByteStream()
@@ -38,6 +38,7 @@ class TerminalView(QtGui.QWidget):
         p.setColor(QtGui.QPalette.Base, QtCore.Qt.black)
         p.setColor(QtGui.QPalette.Text, QtCore.Qt.green)
 
+        # configure the underlying textedit class representing the screen
         self._te = QtGui.QPlainTextEdit()
         self._te.setReadOnly(True)
         self._te.setPalette(p)
@@ -47,27 +48,55 @@ class TerminalView(QtGui.QWidget):
 
         self._te.installEventFilter(self)
 
+        # event driven input
+        self._input_buffer.readyRead.connect(self._have_input)
+
+        # fallback timer polling input buffer since above event is a little
+        # unreliable. This is hacky but I want to ge thte job done :(.
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.timeout.connect(self._have_input)
+        self._refresh_timer.start(50)
+
+        for l in self.screen.buffer:
+            self._insert_line(l)
+
+    def _insert_line(self, line):
+        """Insert a line of pyte.Char objects at the current cursor position."""
+        c = self._te.textCursor()
+        c.insertText(''.join(x.data for x in line))
+        c.insertText('\n')
+
+    def _update_screen(self):
+        for line_num in self.screen.dirty:
+            c = self._te.textCursor()
+            c.movePosition(QtGui.QTextCursor.Start)
+            c.movePosition(QtGui.QTextCursor.Down, n=line_num)
+            c.select(QtGui.QTextCursor.LineUnderCursor)
+            c.removeSelectedText()
+            c.deleteChar()
+            self._te.setTextCursor(c)
+            self._te.setOverwriteMode(True)
+            self._insert_line(self.screen.buffer[line_num])
+        self.screen.dirty = set()
+
     def receiveByte(self, b):
         with self._input_buffer_lock:
-            send_event = len(self._input_buffer.data()) == 0
             self._input_buffer.putChar(b)
 
-        # HACK: there should be a better way!
-        if send_event:
-            self._input_buffer.bytesWritten.emit(1)
-
     def eventFilter(self, recv, e):
-        if recv is not self._te or e.type() != QtCore.QEvent.KeyRelease:
+        if recv is not self._te:
             return False
+        if e.type() == QtCore.QEvent.KeyRelease:
+            t = e.text()
+            if t == '':
+                return False
 
-        t = e.text()
-        if t == '':
-            return False
+            for c in t:
+                self.transmitByte.emit(ord(c))
 
-        for c in t:
-            self.transmitByte.emit(ord(c))
+            return True
 
-        return True
+        return False
 
     def _have_input(self):
         with self._input_buffer_lock:
@@ -79,10 +108,7 @@ class TerminalView(QtGui.QWidget):
             )
 
         self.stream.feed(bs)
-        self._te.setPlainText('\n'.join(
-            ''.join(x.data for x in line)
-            for line in self.screen.buffer
-        ))
+        self._update_screen()
 
     def minimumSize(self):
         return self.sizeHint()
