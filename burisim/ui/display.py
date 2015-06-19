@@ -13,10 +13,13 @@ import threading
 from PySide import QtCore, QtGui
 import pyte
 
-class ScreenView(QtGui.QWidget):
+class ScreenView(QtGui.QFrame):
     def __init__(self, *args, **kwargs):
         super(ScreenView, self).__init__()
+        self.setFrameShape(QtGui.QFrame.StyledPanel)
+        self.setFrameShadow(QtGui.QFrame.Sunken)
         self._screen = None
+        self._cached_screen_size = None
 
     @property
     def screen(self):
@@ -29,33 +32,59 @@ class ScreenView(QtGui.QWidget):
 
     def contents_changed(self):
         self.update()
+        if self._cached_screen_size != self.screen.size:
+            self._cached_screen_size = self.screen.size
+            self.updateGeometry()
 
     def _adjust_to_screen(self):
         self.updateGeometry()
 
-    def paintEvent(self, _):
+    def paintEvent(self, event):
+        super(ScreenView, self).paintEvent(event)
+
+        fw = self.frameWidth()
+        fm = self.fontMetrics()
+
+        p = QtGui.QPainter(self)
+
+        p.fillRect(
+            self.frameRect().adjusted(-fw, -fw, -fw, -fw),
+            QtGui.qRgb(40, 40, 40)
+        )
+
         if self._screen is None:
             return
 
-        fm = self.fontMetrics()
-
         cw, ch = fm.width('X'), fm.lineSpacing()
-        y0 = fm.height()
+        x0, y0 = fw, fw
         h, w = self._screen.size
 
-        p = QtGui.QPainter()
-        assert p.begin(self)
+        bg = QtGui.qRgb(0, 0, 0)
+        fg = QtGui.qRgb(255, 255, 255)
 
-        p.fillRect(0, 0, w*cw, h*ch, QtGui.qRgb(0, 0, 0))
+        cbg = QtGui.qRgb(255, 255, 255)
+        cfg = QtGui.qRgb(0, 0, 0)
 
-        p.setPen(QtGui.qRgb(255, 255, 255))
+        p.fillRect(x0, y0, w*cw, h*ch, bg)
+
+        c = self._screen.cursor
+        to = fm.ascent()
         for y, line in enumerate(self._screen.buffer):
             py = y * ch + y0
             for x, char in enumerate(line):
-                px = x * cw
-                p.drawText(px, py, char.data)
+                p.setPen(fg)
+                px = x * cw + x0
 
-        p.end()
+                if (x, y) == (c.x, c.y):
+                    if self.hasFocus():
+                        p.fillRect(px, py, cw, ch, cbg)
+                        p.setPen(cfg)
+                    else:
+                        p.setPen(cbg)
+                        p.drawRect(px, py, cw, ch)
+                        p.setPen(fg)
+
+                p.drawText(px, py + to, char.data)
 
     def sizeHint(self):
         return self.minimumSize()
@@ -64,9 +93,10 @@ class ScreenView(QtGui.QWidget):
         if self._screen is None:
             return QtCore.QSize(0,0)
 
+        fw = self.frameWidth()
         fm = self.fontMetrics()
         h, w = self._screen.size
-        return QtCore.QSize(w*fm.width('X'), h*fm.lineSpacing())
+        return QtCore.QSize(2*fw + w*fm.width('X'), 2*fw + h*fm.lineSpacing())
 
 class TerminalView(QtGui.QWidget):
     transmitByte = QtCore.Signal(int)
@@ -86,14 +116,16 @@ class TerminalView(QtGui.QWidget):
             QtCore.QIODevice.WriteOnly | QtCore.QIODevice.Unbuffered
         )
 
-        self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
         l = QtGui.QVBoxLayout()
+        l.setContentsMargins(0, 0, 0, 0)
+
         self.setLayout(l)
         self._screen_view = ScreenView()
         self._screen_view.screen = self.screen
         self._screen_view.installEventFilter(self)
         self._screen_view.setFont(QtGui.QFont('Monospace'))
+        self._screen_view.setFocusPolicy(QtCore.Qt.StrongFocus)
         l.addWidget(self._screen_view)
 
     def receiveByte(self, b):
