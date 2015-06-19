@@ -14,6 +14,8 @@ from PySide import QtCore, QtGui
 import pyte
 
 class TerminalView(QtGui.QWidget):
+    transmitByte = QtCore.Signal(int)
+
     def __init__(self, *args, **kwargs):
         super(TerminalView, self).__init__()
         self.screen = pyte.Screen(80, 24)
@@ -37,10 +39,13 @@ class TerminalView(QtGui.QWidget):
         p.setColor(QtGui.QPalette.Text, QtCore.Qt.green)
 
         self._te = QtGui.QPlainTextEdit()
+        self._te.setReadOnly(True)
         self._te.setPalette(p)
         self._te.setLineWrapMode(QtGui.QPlainTextEdit.NoWrap)
         self._te.setFont(QtGui.QFont('Monospace'))
         l.addWidget(self._te)
+
+        self._te.installEventFilter(self)
 
     def receiveByte(self, b):
         with self._input_buffer_lock:
@@ -50,6 +55,19 @@ class TerminalView(QtGui.QWidget):
         # HACK: there should be a better way!
         if send_event:
             self._input_buffer.bytesWritten.emit(1)
+
+    def eventFilter(self, recv, e):
+        if recv is not self._te or e.type() != QtCore.QEvent.KeyRelease:
+            return False
+
+        t = e.text()
+        if t == '':
+            return False
+
+        for c in t:
+            self.transmitByte.emit(ord(c))
+
+        return True
 
     def _have_input(self):
         with self._input_buffer_lock:
