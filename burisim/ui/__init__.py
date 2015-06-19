@@ -110,12 +110,12 @@ class MemoryView(QtGui.QWidget):
             self.simulator.memory[page_offset:page_offset+page_size]
         )
         cpc = self._cached_page_contents
-        if cpc is not None and cpc == current_page:
+        if cpc is not None and cpc == (page_offset, current_page):
             # no change
             return
 
         # record page contents
-        self._cached_page_contents = current_page
+        self._cached_page_contents = (page_offset, current_page)
 
         def mem_contents():
             m = self.simulator.memory
