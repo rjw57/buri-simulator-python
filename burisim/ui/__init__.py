@@ -41,7 +41,9 @@ class HexSpinBox(QtGui.QSpinBox):
         if t == '':
             return QtGui.QValidator.Intermediate
         try:
-            int(t, 16)
+            v = int(t, 16)
+            if v < self.minimum() or v > self.maximum():
+                return QtGui.QValidator.Intermediate
             return QtGui.QValidator.Acceptable
         except ValueError:
             return QtGui.QValidator.Invalid
