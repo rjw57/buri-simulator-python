@@ -8,8 +8,11 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
 )
 
 import cgi
+import signal
+import sys
 
 from PySide import QtCore, QtGui
+from burisim.sim import BuriSim
 
 from .display import HD44780View, TerminalView
 
@@ -182,3 +185,45 @@ def create_ui(sim):
     mw.show()
     return mw
 
+class MainLoop(object):
+    def __init__(self, sim=None, argv=None):
+        # Record simulator
+        self.sim = sim if sim is not None else BuriSim()
+
+        # Create application
+        argv = argv if argv is not None else sys.argv
+        self._app = QtGui.QApplication(argv)
+
+        # When app quits, stop sim
+        self._app.aboutToQuit.connect(self.sim.stop)
+
+        # Wire up Ctrl-C to quit app.
+        def interrupt(*args):
+            print('received interrupt signal, exitting...')
+        signal.signal(signal.SIGINT, interrupt)
+
+        # Create the actual ui
+        self._ui = create_ui(self.sim)
+
+    def attach_serial(self, filename):
+        sp = QtCore.QFile(filename)
+        ok = sp.open(QtCore.QIODevice.ReadWrite | QtCore.QIODevice.Unbuffered)
+        if not ok:
+            raise ValueError('failed to open %s' % filename)
+
+        def have_input():
+            bs = sp.read(1)
+            acia.receive_byte(struct.unpack('B', bs[0])[0])
+        sn = QtCore.QSocketNotifier(sp.handle(), QtCore.QSocketNotifier.Read)
+        sn.activated.connect(have_input)
+
+        acia = sim.acia1
+        acia.register_listener(sp.putChar)
+
+        # HACK: stop sp and sn being garbage collected
+        acia._stashed_notifier = (sp, sn)
+
+    def run(self):
+        # Start simulating once event loop is running
+        QtCore.QTimer.singleShot(0, self.sim.start)
+        return self._app.exec_()

@@ -9,7 +9,7 @@ Options:
     -h, --help          Show a brief usage summary.
     -q, --quiet         Decrease verbosity.
 
-    --no-gui            Don't create GUI.
+    --ui=UI             Select UI. One of qt, tui. [default: tui]
 
 Hardware options:
     --serial URL        Connect ACIA1 to this serial port.
@@ -33,10 +33,10 @@ import struct
 import sys
 
 from docopt import docopt
-from PySide import QtCore, QtGui
 
 from burisim.sim import BuriSim
-from burisim.ui import create_ui
+from burisim.tui import MainLoop as TuiMainLoop
+from burisim.qt import MainLoop as QtMainLoop
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,30 +50,10 @@ def create_sim(opts):
     if opts['--load'] is not None:
         sim.load_ram(opts['--load'], 0x5000)
 
-    if opts['--serial'] is not None:
-        attach_file_to_acia(sim.acia1, opts['--serial'])
-
     # Reset the simulator
     sim.reset()
 
     return sim
-
-def attach_file_to_acia(acia, filename):
-    sp = QtCore.QFile(filename)
-    ok = sp.open(QtCore.QIODevice.ReadWrite | QtCore.QIODevice.Unbuffered)
-    if not ok:
-        raise ValueError('failed to open %s' % filename)
-
-    def have_input():
-        bs = sp.read(1)
-        acia.receive_byte(struct.unpack('B', bs[0])[0])
-    sn = QtCore.QSocketNotifier(sp.handle(), QtCore.QSocketNotifier.Read)
-    sn.activated.connect(have_input)
-
-    acia.register_listener(sp.putChar)
-
-    # HACK: stop sp and sn being garbage collected
-    acia._stashed_notifier = (sp, sn)
 
 def main():
     opts = docopt(__doc__)
@@ -82,33 +62,22 @@ def main():
         stream=sys.stderr, format='%(name)s: %(message)s'
     )
 
-    # Create GUI or non-GUI application as appropriate
-    if opts['--no-gui']:
-        app = QtCore.QCoreApplication(sys.argv)
-    else:
-        app = QtGui.QApplication(sys.argv)
-
-    # Wire up Ctrl-C to quit app.
-    def interrupt(*args):
-        print('received interrupt signal, exitting...')
-        app.quit()
-    signal.signal(signal.SIGINT, interrupt)
-
-    # Create the main simulator and attach it to application quit events.
+    # Create the main simulator
     sim = create_sim(opts)
 
-    # Stop simulating when app is quitting
-    app.aboutToQuit.connect(sim.stop)
+    # Create main loop
+    if opts['--ui'] == 'tui':
+        loop = TuiMainLoop(sim)
+    elif opts['--ui'] == 'qt':
+        loop = QtMainLoop(sim)
+    else:
+        raise RuntimeError('Unknown UI: %s' % (opts['--ui'],))
 
-    # Create the sim UI if requested
-    if not opts['--no-gui']:
-        ui = create_ui(sim)
-
-    # Start simulating once event loop is running
-    QtCore.QTimer.singleShot(0, sim.start)
+    if opts['--serial'] is not None:
+        loop.attach_serial(opts['--serial'])
 
     # Start the application
-    sys.exit(app.exec_())
+    sys.exit(loop.run())
 
 if __name__ == '__main__':
     main()
