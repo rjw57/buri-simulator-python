@@ -6,33 +6,56 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
     pow, round, super,
     filter, map, zip
 )
-from past.builtins import basestring # pylint: disable=redefined-builtin
 
+import fcntl
+import io
 import logging
 import pty
 import os
 
 import urwid
 from docopt import docopt
-from serial.tools import miniterm
+from serial import Serial
 
 _LOGGER = logging.getLogger(__name__)
 
 class Buri(urwid.WidgetWrap):
-    def __init__(self, main_loop=None):
-        master, slave = pty.openpty()
+    def __init__(self, main_loop=None, sim=None):
+        self.sim = sim
 
-        self._slave = os.ttyname(slave)
-        self._master_fd = master
+        self._master, self._slave = pty.openpty()
+        self._slave_ttyname = os.ttyname(self._slave)
+
+        # Set master to non-blocking IO
+        fl = fcntl.fcntl(self._master, fcntl.F_GETFL)
+        fcntl.fcntl(self._master, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
         # Create individual panes
         self.panes = {
             'term': urwid.Terminal(
-                self._term_start, main_loop=main_loop
+                ['minicom', '-D', self._slave_ttyname], main_loop=main_loop
             ),
         }
 
+        if main_loop is not None:
+            main_loop.watch_file(self._master, self._kb_input)
+        self.sim.acia1.register_listener(self._acia_listener)
+
         urwid.WidgetWrap.__init__(self, self._create_ui())
+
+    def _kb_input(self):
+        while True:
+            try:
+                data = os.read(self._master, 512)
+            except io.BlockingIOError:
+                break
+
+            for b in data:
+                b = b if type(b) == int else ord(b)
+                self.sim.acia1.receive_byte(b)
+
+    def _acia_listener(self, b):
+        os.write(self._master, bytes([b]))
 
     @property
     def main_loop(self):
@@ -40,6 +63,8 @@ class Buri(urwid.WidgetWrap):
 
     @main_loop.setter
     def main_loop(self, v):
+        if v is not None:
+            v.watch_file(self._master, self._kb_input)
         self.panes['term'].main_loop = v
 
     def _create_ui(self):
@@ -47,18 +72,6 @@ class Buri(urwid.WidgetWrap):
         footer = urwid.Columns(cols)
 
         return urwid.Frame(self.panes['term'], footer=footer)
-
-    def _term_start(self):
-        mt = miniterm.Miniterm(
-            self._slave, 19200, 'N', False, False, echo=False,
-        )
-        mt.start()
-        try:
-            mt.join(True)
-        except KeyboardInterrupt:
-            pass
-        mt.join()
-
 
 def unhandled_input(key):
     if key == 'meta x':
@@ -69,7 +82,7 @@ class MainLoop(object):
         # Record simulator
         self.sim = sim if sim is not None else BuriSim()
 
-        self._ui = Buri(self.sim)
+        self._ui = Buri(None, self.sim)
         self._loop = urwid.MainLoop(
             self._ui, unhandled_input=unhandled_input
         )

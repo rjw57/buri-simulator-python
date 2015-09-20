@@ -50,6 +50,9 @@ class BuriSim(object):
         self._mpu_thread = None
         self._want_stop = True
 
+        # Track simulator freq.
+        self.freq = 0
+
         # Register ROM as read-only
         def raise_rom_exception(addr, value):
             raise ReadOnlyMemoryError(addr + BuriSim.ROM_RANGE[0], value)
@@ -186,7 +189,7 @@ class BuriSim(object):
             while not self._want_stop:
                 n_ticks += self.step(ticks_per_loop)
                 now = time.time()
-                print('Running at {0:d}Hz'.format(int(n_ticks / (now - last_report))))
+                self.freq = n_ticks / (now - last_report)
                 last_report, n_ticks = now, 0
 
         # create and start thread
@@ -208,6 +211,7 @@ class BuriSim(object):
 
         # wait for thread
         self._mpu_thread.join()
+        self.freq = 0
 
     def step(self, ticks):
         """Single-cycle the machine for a specified number of clock ticks."""
