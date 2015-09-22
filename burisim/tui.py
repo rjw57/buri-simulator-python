@@ -69,6 +69,30 @@ class ACAITerminal(urwid.WidgetWrap):
         mt.start()
         mt.join()
 
+class Memory(urwid.WidgetWrap):
+    def __init__(self, sim):
+        self.sim = sim
+
+        self._page, self._bank = 0, 0
+
+        self._mem_text = urwid.Text('')
+        w = urwid.Filler(self._mem_text, valign='top')
+        urwid.WidgetWrap.__init__(self, w)
+
+    def get_page(self):
+        return self._page
+
+    def set_page(self, p):
+        self._page = p
+        self._invalidate()
+
+    def get_bank(self):
+        return self._bank
+
+    def set_bank(self, b):
+        self._bank = b
+        self._invalidate()
+
 class Buri(urwid.WidgetWrap):
     _signals = ['exit']
 
@@ -78,13 +102,14 @@ class Buri(urwid.WidgetWrap):
         # Create individual panes
         self._panes = {
             'term': ACAITerminal(main_loop, self.sim.acia1),
-            'mem': urwid.SolidFill('x'),
+            'mem': Memory(self.sim),
         }
 
         self._sim_freq = urwid.Text('')
         self._footer = urwid.Columns([
-            ('pack', urwid.Text('F1 Term')),
-            ('pack', urwid.Text('F2 Memory')),
+            ('pack', urwid.Text('Alt+q Quit')),
+            ('pack', urwid.Text('Alt+t Term')),
+            ('pack', urwid.Text('Alt+m Memory')),
             ('weight', 1, urwid.Divider(div_char=' ')),
             (10, self._sim_freq),
         ], dividechars=1)
@@ -109,10 +134,12 @@ class Buri(urwid.WidgetWrap):
             v.set_alarm_in(1.0, self._status_tick)
 
     def keypress(self, size, key):
-        if key == 'f1':
+        if key == 'meta t':
             self._switch_pane('term')
-        elif key == 'f2':
+        elif key == 'meta m':
             self._switch_pane('mem')
+        elif key == 'meta q':
+            raise urwid.ExitMainLoop()
         else:
             return self._w.keypress(size, key)
 
