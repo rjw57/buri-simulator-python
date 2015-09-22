@@ -16,6 +16,7 @@ import os
 import urwid
 from docopt import docopt
 from serial import Serial
+from serial.tools import miniterm
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,10 +31,7 @@ class ACAITerminal(urwid.WidgetWrap):
         fl = fcntl.fcntl(self._master, fcntl.F_GETFL)
         fcntl.fcntl(self._master, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
-        term = urwid.Terminal(
-            ['minicom', '-D', self._slave_ttyname, '-b', '19200'],
-            main_loop=main_loop
-        )
+        term = urwid.Terminal(self._term_func, main_loop=main_loop)
 
         if main_loop is not None:
             main_loop.watch_file(self._master, self._kb_input)
@@ -64,6 +62,12 @@ class ACAITerminal(urwid.WidgetWrap):
         if v is not None:
             v.watch_file(self._master, self._kb_input)
         self._w.main_loop = v
+
+    def _term_func(self):
+        mt = miniterm.Miniterm(self._slave_ttyname, 19200, 'N', False, False)
+        miniterm.console.setup()
+        mt.start()
+        mt.join()
 
 class Buri(urwid.WidgetWrap):
     _signals = ['exit']
