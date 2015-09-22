@@ -43,6 +43,21 @@ special_src = '''
         return M6502_setCallback(mpu, call, address, callback);
     }
 
+    static M6502_Callback
+    M6502_clearReadCallback(M6502 *mpu, uint16_t address) {
+        return M6502_setCallback(mpu, read, address, NULL);
+    }
+
+    static M6502_Callback
+    M6502_clearWriteCallback(M6502 *mpu, uint16_t address) {
+        return M6502_setCallback(mpu, write, address, NULL);
+    }
+
+    static M6502_Callback
+    M6502_clearCallCallback(M6502 *mpu, uint16_t address) {
+        return M6502_setCallback(mpu, call, address, NULL);
+    }
+
     /* These functions wrap the M6502_getVector macro. */
 
     uint16_t
@@ -139,6 +154,15 @@ ffi.cdef("""
 
     M6502_Callback
     M6502_setCallCallback(M6502 *mpu, uint16_t address, M6502_Callback callback);
+
+    M6502_Callback
+    M6502_clearReadCallback(M6502 *mpu, uint16_t address);
+
+    M6502_Callback
+    M6502_clearWriteCallback(M6502 *mpu, uint16_t address);
+
+    M6502_Callback
+    M6502_clearCallCallback(M6502 *mpu, uint16_t address);
 
     uint16_t
     M6502_getRSTVector(M6502 *mpu);

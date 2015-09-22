@@ -78,6 +78,15 @@ class M6502(object):
         for v in range(offset, offset+length):
             lib.M6502_setReadCallback(self._mpu, v, _read_cb)
 
+    def unregister_read_handler(self, offset, length, read_cb):
+        """Undoes the effect of register_read_handler.
+
+        """
+        self._read_cbs.discardi(offset, offset+length, read_cb)
+        for v in range(offset, offset+length):
+            if len(self._read_cbs[v]) == 0:
+                lib.M6502_clearReadCallback(self._mpu, v)
+
     def register_call_handler(self, offset, length, call_cb):
         """Registers call_cb as a callable called each time an address in the
         range [offset, offset_length) is jumped to due to anything other than a
@@ -94,6 +103,15 @@ class M6502(object):
         for v in range(offset, offset+length):
             lib.M6502_setCallCallback(self._mpu, v, _call_cb)
 
+    def unregister_call_handler(self, offset, length, call_cb):
+        """Undoes the effect of register_call_handler.
+
+        """
+        self._call_cbs.discardi(offset, offset+length, call_cb)
+        for v in range(offset, offset+length):
+            if len(self._call_cbs[v]) == 0:
+                lib.M6502_clearCallCallback(self._mpu, v)
+
     def register_write_handler(self, offset, length, write_cb):
         """Registers write_cb as a writeable called each time an address in the
         range [offset, offset_length) is written to. Note that this is
@@ -108,6 +126,15 @@ class M6502(object):
         self._write_cbs.addi(offset, offset+length, write_cb)
         for v in range(offset, offset+length):
             lib.M6502_setWriteCallback(self._mpu, v, _write_cb)
+
+    def unregister_write_handler(self, offset, length, write_cb):
+        """Undoes the effect of register_write_handler.
+
+        """
+        self._write_cbs.discardi(offset, offset+length, write_cb)
+        for v in range(offset, offset+length):
+            if len(self._write_cbs[v]) == 0:
+                lib.M6502_clearWriteCallback(self._mpu, v)
 
     @property
     def memory(self):
