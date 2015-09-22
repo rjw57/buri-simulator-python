@@ -20,6 +20,8 @@ from serial.tools import miniterm
 
 _LOGGER = logging.getLogger(__name__)
 
+HORIZ_BAR = '\N{BOX DRAWINGS LIGHT HORIZONTAL}'
+
 class ACAITerminal(urwid.WidgetWrap):
     def __init__(self, main_loop, acia):
         self.acia = acia
@@ -69,76 +71,61 @@ class ACAITerminal(urwid.WidgetWrap):
         mt.start()
         mt.join()
 
-class Memory(urwid.WidgetWrap):
-    def __init__(self, sim):
-        self.sim = sim
-
-        self._page, self._bank = 0, 0
-
-        self._mem_text = urwid.Text('')
-        w = urwid.Filler(self._mem_text, valign='top')
-        urwid.WidgetWrap.__init__(self, w)
-
-    def get_page(self):
-        return self._page
-
-    def set_page(self, p):
-        self._page = p
-        self._invalidate()
-
-    def get_bank(self):
-        return self._bank
-
-    def set_bank(self, b):
-        self._bank = b
-        self._invalidate()
-
 class Buri(urwid.WidgetWrap):
-    _signals = ['exit']
-
     def __init__(self, main_loop=None, sim=None):
+        self._pile = urwid.Pile([])
+        urwid.WidgetWrap.__init__(self, urwid.Frame(self._pile))
+
         self.sim = sim
 
-        # Create individual panes
-        self._panes = {
-            'term': ACAITerminal(main_loop, self.sim.acia1),
-            'mem': Memory(self.sim),
-        }
+        self._term = ACAITerminal(main_loop, self.sim.acia1)
+
+        self._pane_title = urwid.Text('Doo')
+        self._pane_frame = urwid.Frame(urwid.SolidFill('/'))
+
+        self._pile.contents = [
+            (urwid.Columns([
+                ('weight', 1, urwid.Divider(HORIZ_BAR)),
+                ('pack', urwid.Text('Serial console')),
+                ('weight', 1, urwid.Divider(HORIZ_BAR)),
+            ], dividechars=1), ('pack', None)),
+            (self._term, ('weight', 1)),
+            (urwid.Columns([
+                ('weight', 1, urwid.Divider(HORIZ_BAR)),
+                ('pack', self._pane_title),
+                ('weight', 1, urwid.Divider(HORIZ_BAR)),
+            ], dividechars=1), ('pack', None)),
+            (self._pane_frame, ('weight', 1)),
+        ]
+        self._pile.focus_position = 1
 
         self._sim_freq = urwid.Text('')
-        self._footer = urwid.Columns([
-            ('pack', urwid.Text('Alt+q Quit')),
-            ('pack', urwid.Text('Alt+t Term')),
-            ('pack', urwid.Text('Alt+m Memory')),
+        self._footer = urwid.AttrMap(urwid.Columns([
+            urwid.Text([
+                ' ',
+                ('hotkey', 'Alt+q'), ' Quit ',
+                ('hotkey', 'Alt+t'), ' Term ',
+                ('hotkey', 'Alt+m'), ' Memory ',
+            ]),
             ('weight', 1, urwid.Divider(div_char=' ')),
             (10, self._sim_freq),
-        ], dividechars=1)
-        self._main_frame = urwid.Frame(
-            urwid.SolidFill(' '), footer=self._footer
-        )
-
-        self._switch_pane('term')
-
-        urwid.WidgetWrap.__init__(self, self._main_frame)
+        ]), { None: 'status', 'hotkey': 'status hotkey' })
+        self._w.contents['footer'] = (self._footer, None)
 
         self.main_loop = main_loop
 
     @property
     def main_loop(self):
-        return self.panes['term'].main_loop
+        return self._term.main_loop
 
     @main_loop.setter
     def main_loop(self, v):
-        self._panes['term'].main_loop = v
+        self._term.main_loop = v
         if v is not None:
             v.set_alarm_in(1.0, self._status_tick)
 
     def keypress(self, size, key):
-        if key == 'meta t':
-            self._switch_pane('term')
-        elif key == 'meta m':
-            self._switch_pane('mem')
-        elif key == 'meta q':
+        if key == 'meta q':
             raise urwid.ExitMainLoop()
         else:
             return self._w.keypress(size, key)
@@ -149,25 +136,25 @@ class Buri(urwid.WidgetWrap):
         ))
         loop.set_alarm_in(1.0, self._status_tick)
 
-    def _switch_pane(self, pane):
-        w = self._panes[pane]
-        self._main_frame.contents['body'] = (w, None)
-
-    def exit(self):
-        self.emit('exit')
-
 def unhandled_input(key):
     if key == 'meta x':
         raise urwid.ExitMainLoop
 
 class MainLoop(object):
+    PALETTE = [
+        (None, 'light gray', 'dark blue'),
+        ('status', 'black', 'light gray'),
+        ('status hotkey', 'dark red', 'light gray'),
+    ]
+
     def __init__(self, sim=None, argv=None):
         # Record simulator
         self.sim = sim if sim is not None else BuriSim()
 
         self._ui = Buri(None, self.sim)
         self._loop = urwid.MainLoop(
-            self._ui, unhandled_input=unhandled_input
+            self._ui, unhandled_input=unhandled_input,
+            palette=MainLoop.PALETTE
         )
         self._ui.main_loop = self._loop
 
