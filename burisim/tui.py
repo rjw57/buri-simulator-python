@@ -10,17 +10,19 @@ from builtins import (  # pylint: disable=redefined-builtin, unused-import
 import fcntl
 import io
 import logging
-import pty
 import os
+import pty
+import threading
+import time
+import weakref
 
 import urwid
-from docopt import docopt
-from serial import Serial
 from serial.tools import miniterm
 
 _LOGGER = logging.getLogger(__name__)
 
 HORIZ_BAR = '\N{BOX DRAWINGS LIGHT HORIZONTAL}'
+VERT_BAR = '\N{BOX DRAWINGS LIGHT VERTICAL}'
 
 class ACAITerminal(urwid.WidgetWrap):
     def __init__(self, main_loop, acia):
@@ -71,6 +73,34 @@ class ACAITerminal(urwid.WidgetWrap):
         mt.start()
         mt.join()
 
+class PageView(urwid.WidgetWrap):
+    def __init__(self, sim, page=0):
+        self.sim = sim
+        self._page = page
+        self._txt = urwid.Text('')
+        urwid.WidgetWrap.__init__(self, urwid.Pile([
+            ('pack', urwid.Columns([self._txt]))
+        ]))
+        self.tick()
+
+    def tick(self):
+        rows = []
+        addr = self._page * 0x100
+        for high_nybble in range(0x10):
+            hex_row, ascii_row = [], []
+            row_addr = addr + high_nybble * 0x10
+            for low_nybble in range(0x10):
+                v = self.sim.mpu.memory[row_addr + low_nybble]
+                hex_row.append('{:02X} '.format(v))
+                if low_nybble == 0x7:
+                    hex_row.append(' ')
+                if v >= 0x20 and v < 127:
+                    ascii_row.append(chr(v))
+                else:
+                    ascii_row.append('.')
+            rows.append('{}|{}|'.format(''.join(hex_row), ''.join(ascii_row)))
+        self._txt.set_text('\n'.join(rows))
+
 class Buri(urwid.WidgetWrap):
     def __init__(self, main_loop=None, sim=None):
         self._pile = urwid.Pile([])
@@ -80,8 +110,10 @@ class Buri(urwid.WidgetWrap):
 
         self._term = ACAITerminal(main_loop, self.sim.acia1)
 
-        self._pane_title = urwid.Text('Doo')
-        self._pane_frame = urwid.Frame(urwid.SolidFill('/'))
+        self._page_view = PageView(sim)
+
+        self._pane_title = urwid.Text('Memory')
+        self._pane_frame = urwid.Frame(self._page_view)
 
         self._pile.contents = [
             (urwid.Columns([
@@ -122,7 +154,7 @@ class Buri(urwid.WidgetWrap):
     def main_loop(self, v):
         self._term.main_loop = v
         if v is not None:
-            v.set_alarm_in(1.0, self._status_tick)
+            v.set_alarm_in(0.0, self._status_tick)
 
     def keypress(self, size, key):
         if key == 'meta q':
@@ -131,10 +163,11 @@ class Buri(urwid.WidgetWrap):
             return self._w.keypress(size, key)
 
     def _status_tick(self, loop, _):
+        self._page_view.tick()
         self._sim_freq.set_text('{0:0.2} MHz'.format(
             self.sim.freq * 1e-6
         ))
-        loop.set_alarm_in(1.0, self._status_tick)
+        loop.set_alarm_in(0.1, self._status_tick)
 
 def unhandled_input(key):
     if key == 'meta x':
