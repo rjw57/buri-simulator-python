@@ -19,9 +19,9 @@ from serial import Serial
 
 _LOGGER = logging.getLogger(__name__)
 
-class Buri(urwid.WidgetWrap):
-    def __init__(self, main_loop=None, sim=None):
-        self.sim = sim
+class ACAITerminal(urwid.WidgetWrap):
+    def __init__(self, main_loop, acia):
+        self.acia = acia
 
         self._master, self._slave = pty.openpty()
         self._slave_ttyname = os.ttyname(self._slave)
@@ -30,18 +30,16 @@ class Buri(urwid.WidgetWrap):
         fl = fcntl.fcntl(self._master, fcntl.F_GETFL)
         fcntl.fcntl(self._master, fcntl.F_SETFL, fl | os.O_NONBLOCK)
 
-        # Create individual panes
-        self.panes = {
-            'term': urwid.Terminal(
-                ['minicom', '-D', self._slave_ttyname], main_loop=main_loop
-            ),
-        }
+        term = urwid.Terminal(
+            ['minicom', '-D', self._slave_ttyname, '-b', '19200'],
+            main_loop=main_loop
+        )
 
         if main_loop is not None:
             main_loop.watch_file(self._master, self._kb_input)
-        self.sim.acia1.register_listener(self._acia_listener)
+        self.acia.register_listener(self._acia_listener)
 
-        urwid.WidgetWrap.__init__(self, self._create_ui())
+        urwid.WidgetWrap.__init__(self, term)
 
     def _kb_input(self):
         while True:
@@ -52,10 +50,49 @@ class Buri(urwid.WidgetWrap):
 
             for b in data:
                 b = b if type(b) == int else ord(b)
-                self.sim.acia1.receive_byte(b)
+                self.acia.receive_byte(b)
 
     def _acia_listener(self, b):
         os.write(self._master, bytes([b]))
+
+    @property
+    def main_loop(self):
+        return self._w.main_loop
+
+    @main_loop.setter
+    def main_loop(self, v):
+        if v is not None:
+            v.watch_file(self._master, self._kb_input)
+        self._w.main_loop = v
+
+class Buri(urwid.WidgetWrap):
+    _signals = ['exit']
+
+    def __init__(self, main_loop=None, sim=None):
+        self.sim = sim
+
+        # Create individual panes
+        self._panes = {
+            'term': ACAITerminal(main_loop, self.sim.acia1),
+            'mem': urwid.SolidFill('x'),
+        }
+
+        self._sim_freq = urwid.Text('')
+        self._footer = urwid.Columns([
+            ('pack', urwid.Text('F1 Term')),
+            ('pack', urwid.Text('F2 Memory')),
+            ('weight', 1, urwid.Divider(div_char=' ')),
+            (10, self._sim_freq),
+        ], dividechars=1)
+        self._main_frame = urwid.Frame(
+            urwid.SolidFill(' '), footer=self._footer
+        )
+
+        self._switch_pane('term')
+
+        urwid.WidgetWrap.__init__(self, self._main_frame)
+
+        self.main_loop = main_loop
 
     @property
     def main_loop(self):
@@ -63,15 +100,30 @@ class Buri(urwid.WidgetWrap):
 
     @main_loop.setter
     def main_loop(self, v):
+        self._panes['term'].main_loop = v
         if v is not None:
-            v.watch_file(self._master, self._kb_input)
-        self.panes['term'].main_loop = v
+            v.set_alarm_in(1.0, self._status_tick)
 
-    def _create_ui(self):
-        cols = [ urwid.Text('F1 Term'), ]
-        footer = urwid.Columns(cols)
+    def keypress(self, size, key):
+        if key == 'f1':
+            self._switch_pane('term')
+        elif key == 'f2':
+            self._switch_pane('mem')
+        else:
+            return self._w.keypress(size, key)
 
-        return urwid.Frame(self.panes['term'], footer=footer)
+    def _status_tick(self, loop, _):
+        self._sim_freq.set_text('{0:0.2} MHz'.format(
+            self.sim.freq * 1e-6
+        ))
+        loop.set_alarm_in(1.0, self._status_tick)
+
+    def _switch_pane(self, pane):
+        w = self._panes[pane]
+        self._main_frame.contents['body'] = (w, None)
+
+    def exit(self):
+        self.emit('exit')
 
 def unhandled_input(key):
     if key == 'meta x':
