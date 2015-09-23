@@ -51,7 +51,7 @@ class BuriSim(object):
         self._want_stop = True
 
         # Track simulator freq.
-        self.freq = 0
+        self.freq = None
 
         # Register ROM as read-only
         def raise_rom_exception(addr, value):
@@ -163,11 +163,13 @@ class BuriSim(object):
                 self.mpu.memory[addr + off] = val
 
     def reset(self):
+        """Perform a hardware reset."""
         was_running = self.is_running()
         if was_running:
             self.stop()
 
-        """Perform a hardware reset."""
+        self.freq = None
+
         # Reset hardware
         self.acia1.hw_reset()
 

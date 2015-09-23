@@ -19,10 +19,17 @@ import weakref
 import urwid
 from serial.tools import miniterm
 
+from .decoration import LabelledSeparator, Window
+from .view import HexMemoryView, ASCIIMemoryView
+
 _LOGGER = logging.getLogger(__name__)
 
 HORIZ_BAR = '\N{BOX DRAWINGS LIGHT HORIZONTAL}'
 VERT_BAR = '\N{BOX DRAWINGS LIGHT VERTICAL}'
+CROSS_BAR = '\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}'
+
+RUNNING_SYMBOL = '\N{TRIANGULAR BULLET}'
+STOPPED_SYMBOL = '\N{BULLET}'
 
 class ACAITerminal(urwid.WidgetWrap):
     def __init__(self, main_loop, acia):
@@ -73,78 +80,62 @@ class ACAITerminal(urwid.WidgetWrap):
         mt.start()
         mt.join()
 
-class PageView(urwid.WidgetWrap):
-    def __init__(self, sim, page=0):
+class MemoryExplorer(urwid.WidgetWrap):
+    def __init__(self, sim):
         self.sim = sim
-        self._page = page
-        self._txt = urwid.Text('')
-        urwid.WidgetWrap.__init__(self, urwid.Pile([
-            ('pack', urwid.Columns([self._txt]))
-        ]))
-        self.tick()
+        self._hmv = HexMemoryView(sim)
+        self._amv = ASCIIMemoryView(sim)
+
+        w = urwid.Pile([
+            urwid.Columns([
+                ('weight', 1, urwid.SolidFill(' ')),
+                ('pack', self._hmv),
+                (1, urwid.SolidFill(' ')),
+                (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory sep')),
+                ('pack', self._amv),
+                (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory sep')),
+                ('weight', 1, urwid.SolidFill(' ')),
+            ], box_columns=[0,2,3,5,6]),
+        ])
+
+        urwid.WidgetWrap.__init__(self, urwid.AttrMap(w, 'memory'))
 
     def tick(self):
-        rows = []
-        addr = self._page * 0x100
-        for high_nybble in range(0x10):
-            hex_row, ascii_row = [], []
-            row_addr = addr + high_nybble * 0x10
-            for low_nybble in range(0x10):
-                v = self.sim.mpu.memory[row_addr + low_nybble]
-                hex_row.append('{:02X} '.format(v))
-                if low_nybble == 0x7:
-                    hex_row.append(' ')
-                if v >= 0x20 and v < 127:
-                    ascii_row.append(chr(v))
-                else:
-                    ascii_row.append('.')
-            rows.append('{}|{}|'.format(''.join(hex_row), ''.join(ascii_row)))
-        self._txt.set_text('\n'.join(rows))
+        for w in (self._hmv, self._amv):
+            w.tick()
 
 class Buri(urwid.WidgetWrap):
     def __init__(self, main_loop=None, sim=None):
-        self._pile = urwid.Pile([])
-        urwid.WidgetWrap.__init__(self, urwid.Frame(self._pile))
-
         self.sim = sim
 
         self._term = ACAITerminal(main_loop, self.sim.acia1)
-
-        self._page_view = PageView(sim)
-
-        self._pane_title = urwid.Text('Memory')
-        self._pane_frame = urwid.Frame(self._page_view)
-
-        self._pile.contents = [
-            (urwid.Columns([
-                ('weight', 1, urwid.Divider(HORIZ_BAR)),
-                ('pack', urwid.Text('Serial console')),
-                ('weight', 1, urwid.Divider(HORIZ_BAR)),
-            ], dividechars=1), ('pack', None)),
-            (self._term, ('weight', 1)),
-            (urwid.Columns([
-                ('weight', 1, urwid.Divider(HORIZ_BAR)),
-                ('pack', self._pane_title),
-                ('weight', 1, urwid.Divider(HORIZ_BAR)),
-            ], dividechars=1), ('pack', None)),
-            (self._pane_frame, ('weight', 1)),
-        ]
-        self._pile.focus_position = 1
+        self._mem = MemoryExplorer(self.sim)
 
         self._sim_freq = urwid.Text('')
         self._footer = urwid.AttrMap(urwid.Columns([
             urwid.Text([
                 ' ',
-                ('hotkey', 'Alt+q'), ' Quit ',
-                ('hotkey', 'Alt+t'), ' Term ',
-                ('hotkey', 'Alt+m'), ' Memory ',
+                ('hotkey', 'Ctrl+Q'), ' Exit  ',
+                ('hotkey', 'F10'), ' Reset ',
             ]),
             ('weight', 1, urwid.Divider(div_char=' ')),
             (10, self._sim_freq),
         ]), { None: 'status', 'hotkey': 'status hotkey' })
-        self._w.contents['footer'] = (self._footer, None)
 
+        self._pile = urwid.Pile([
+            ('weight', 1, urwid.LineBox(
+                self._term, title='Serial Console (Ctrl+A to escape)'
+            )),
+            ('pack', urwid.LineBox(
+                self._mem, title='Memory' # , border_attr='memory border'
+            )),
+        ])
+
+        # this must be set after other attributes are present on self
         self.main_loop = main_loop
+        urwid.WidgetWrap.__init__(self, urwid.Frame(
+            self._pile, footer=self._footer
+        ))
 
     @property
     def main_loop(self):
@@ -157,16 +148,24 @@ class Buri(urwid.WidgetWrap):
             v.set_alarm_in(0.0, self._status_tick)
 
     def keypress(self, size, key):
-        if key == 'meta q':
+        if key == 'ctrl q':
             raise urwid.ExitMainLoop()
+        elif key == 'f10':
+            self.sim.reset()
         else:
             return self._w.keypress(size, key)
 
     def _status_tick(self, loop, _):
-        self._page_view.tick()
-        self._sim_freq.set_text('{0:0.2} MHz'.format(
-            self.sim.freq * 1e-6
-        ))
+        self._mem.tick()
+
+        status_text = [
+            ('status running', RUNNING_SYMBOL) if self.sim.is_running else \
+                ('status stopped', STOPPED_SYMBOL),
+        ]
+        if self.sim.freq is not None and self.sim.is_running:
+            status_text.append(' {0:0.2} MHz'.format(self.sim.freq * 1e-6))
+        self._sim_freq.set_text(status_text)
+
         loop.set_alarm_in(0.1, self._status_tick)
 
 def unhandled_input(key):
@@ -176,8 +175,18 @@ def unhandled_input(key):
 class MainLoop(object):
     PALETTE = [
         (None, 'light gray', 'dark blue'),
+        ('window border', 'light gray', 'dark blue'),
         ('status', 'black', 'light gray'),
         ('status hotkey', 'dark red', 'light gray'),
+        ('status stopped', 'dark red', 'light gray'),
+        ('status running', 'dark green', 'light gray'),
+        ('label', 'light gray', 'dark blue'),
+        ('memory', 'light gray', 'black'),
+        ('memory border', 'light gray', 'black'),
+        ('memory hex', 'light gray', 'black'),
+        ('memory replace', 'dark red', 'black'),
+        ('memory sep', 'dark blue', 'black'),
+        ('memory ascii', 'light gray', 'black'),
     ]
 
     def __init__(self, sim=None, argv=None):
