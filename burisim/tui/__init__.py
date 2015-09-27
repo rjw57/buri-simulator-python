@@ -20,7 +20,7 @@ import urwid
 from serial.tools import miniterm
 
 from .decoration import LabelledSeparator, Window
-from .view import HexMemoryView, ASCIIMemoryView
+from .view import MemoryExplorer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,80 +79,6 @@ class ACAITerminal(urwid.WidgetWrap):
         miniterm.console.setup()
         mt.start()
         mt.join()
-
-class MemoryExplorer(urwid.WidgetWrap):
-    def __init__(self, sim):
-        self.sim = sim
-        self._hmv = HexMemoryView(sim)
-        self._amv = ASCIIMemoryView(sim)
-
-        self._left_heading = urwid.Text('')
-        self._update_left_heading()
-
-        w = urwid.Pile([
-            urwid.Columns([
-                ('weight', 1, urwid.SolidFill(' ')),
-                ('pack', urwid.Text([
-                    '    ',
-                    ('memory divider', VERT_BAR),
-                    (
-                        'memory header',
-                        ' '.join('{:02X}'.format(v) for v in range(0x8))
-                    ),
-                    '  ',
-                    (
-                        'memory header',
-                        ' '.join('{:02X}'.format(v) for v in range(0x8, 0x10))
-                    ),
-                ])),
-                (19, urwid.Divider(div_char=' ')),
-                ('weight', 1, urwid.SolidFill(' ')),
-            ], box_columns=[0, 3]),
-            urwid.Columns([
-                ('weight', 1, urwid.SolidFill(' ')),
-                (4, urwid.AttrMap(
-                    urwid.Divider(div_char=HORIZ_BAR),
-                    'memory divider'
-                )),
-                (1, urwid.AttrMap(urwid.Text(CROSS_BAR), 'memory divider')),
-                (16*4 + 3, urwid.AttrMap(
-                    urwid.Divider(div_char=HORIZ_BAR),
-                    'memory divider'
-                )),
-                ('weight', 1, urwid.SolidFill(' ')),
-            ], box_columns=[0, 4]),
-            urwid.Columns([
-                ('weight', 1, urwid.SolidFill(' ')),
-                (4, urwid.AttrMap(self._left_heading, 'memory header')),
-                (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory divider')),
-                ('pack', self._hmv),
-                (1, urwid.SolidFill(' ')),
-                (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory sep')),
-                ('pack', self._amv),
-                (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory sep')),
-                ('weight', 1, urwid.SolidFill(' ')),
-            ], box_columns=[0, 2, 4, 5, 7, 8]),
-            urwid.Columns([
-                ('weight', 1, urwid.SolidFill(' ')),
-                ('pack', urwid.Text('Page: ')),
-                (4, urwid.Edit('')),
-                ('pack', urwid.Text('Bank: ')),
-                (4, urwid.Edit('')),
-                ('weight', 1, urwid.SolidFill(' ')),
-            ], box_columns=[0, 5]),
-        ])
-
-        urwid.WidgetWrap.__init__(self, urwid.AttrMap(w, 'memory'))
-
-    def _update_left_heading(self):
-        p = 0
-        self._left_heading.set_text('\n'.join(
-            '{0:04X}'.format(v) for v in range(p*0x100, (p+1)*0x100, 0x10)
-        ))
-
-    def tick(self):
-        for w in (self._hmv, self._amv):
-            w.tick()
 
 class Buri(urwid.WidgetWrap):
     def __init__(self, main_loop=None, sim=None):
