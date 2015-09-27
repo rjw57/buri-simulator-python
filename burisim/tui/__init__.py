@@ -86,19 +86,69 @@ class MemoryExplorer(urwid.WidgetWrap):
         self._hmv = HexMemoryView(sim)
         self._amv = ASCIIMemoryView(sim)
 
+        self._left_heading = urwid.Text('')
+        self._update_left_heading()
+
         w = urwid.Pile([
             urwid.Columns([
                 ('weight', 1, urwid.SolidFill(' ')),
+                ('pack', urwid.Text([
+                    '    ',
+                    ('memory divider', VERT_BAR),
+                    (
+                        'memory header',
+                        ' '.join('{:02X}'.format(v) for v in range(0x8))
+                    ),
+                    '  ',
+                    (
+                        'memory header',
+                        ' '.join('{:02X}'.format(v) for v in range(0x8, 0x10))
+                    ),
+                ])),
+                (19, urwid.Divider(div_char=' ')),
+                ('weight', 1, urwid.SolidFill(' ')),
+            ], box_columns=[0, 3]),
+            urwid.Columns([
+                ('weight', 1, urwid.SolidFill(' ')),
+                (4, urwid.AttrMap(
+                    urwid.Divider(div_char=HORIZ_BAR),
+                    'memory divider'
+                )),
+                (1, urwid.AttrMap(urwid.Text(CROSS_BAR), 'memory divider')),
+                (16*4 + 3, urwid.AttrMap(
+                    urwid.Divider(div_char=HORIZ_BAR),
+                    'memory divider'
+                )),
+                ('weight', 1, urwid.SolidFill(' ')),
+            ], box_columns=[0, 4]),
+            urwid.Columns([
+                ('weight', 1, urwid.SolidFill(' ')),
+                (4, urwid.AttrMap(self._left_heading, 'memory header')),
+                (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory divider')),
                 ('pack', self._hmv),
                 (1, urwid.SolidFill(' ')),
                 (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory sep')),
                 ('pack', self._amv),
                 (1, urwid.AttrMap(urwid.SolidFill(VERT_BAR), 'memory sep')),
                 ('weight', 1, urwid.SolidFill(' ')),
-            ], box_columns=[0,2,3,5,6]),
+            ], box_columns=[0, 2, 4, 5, 7, 8]),
+            urwid.Columns([
+                ('weight', 1, urwid.SolidFill(' ')),
+                ('pack', urwid.Text('Page: ')),
+                (4, urwid.Edit('')),
+                ('pack', urwid.Text('Bank: ')),
+                (4, urwid.Edit('')),
+                ('weight', 1, urwid.SolidFill(' ')),
+            ], box_columns=[0, 5]),
         ])
 
         urwid.WidgetWrap.__init__(self, urwid.AttrMap(w, 'memory'))
+
+    def _update_left_heading(self):
+        p = 0
+        self._left_heading.set_text('\n'.join(
+            '{0:04X}'.format(v) for v in range(p*0x100, (p+1)*0x100, 0x10)
+        ))
 
     def tick(self):
         for w in (self._hmv, self._amv):
@@ -126,9 +176,9 @@ class Buri(urwid.WidgetWrap):
             ('weight', 1, urwid.LineBox(
                 self._term, title='Serial Console (Ctrl+A to escape)'
             )),
-            ('pack', urwid.LineBox(
-                self._mem, title='Memory' # , border_attr='memory border'
-            )),
+            ('pack', urwid.AttrMap(urwid.LineBox(
+                self._mem, title='Memory'
+            ), 'memory border')),
         ])
 
         # this must be set after other attributes are present on self
@@ -182,11 +232,13 @@ class MainLoop(object):
         ('status running', 'dark green', 'light gray'),
         ('label', 'light gray', 'dark blue'),
         ('memory', 'light gray', 'black'),
+        ('memory ascii', 'light gray', 'black'),
         ('memory border', 'light gray', 'black'),
+        ('memory divider', 'dark blue', 'black'),
+        ('memory header', 'light gray', 'black'),
         ('memory hex', 'light gray', 'black'),
         ('memory replace', 'dark red', 'black'),
         ('memory sep', 'dark blue', 'black'),
-        ('memory ascii', 'light gray', 'black'),
     ]
 
     def __init__(self, sim=None, argv=None):

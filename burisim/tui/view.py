@@ -4,12 +4,32 @@ HORIZ_BAR = '\N{BOX DRAWINGS LIGHT HORIZONTAL}'
 VERT_BAR = '\N{BOX DRAWINGS LIGHT VERTICAL}'
 CROSS_BAR = '\N{BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL}'
 
-class HexMemoryView(urwid.WidgetWrap):
-    _sizing = frozenset(['fixed'])
-
+class _MemoryViewMixin(object):
     def __init__(self, sim, page=0):
         self.sim = sim
         self._page = page
+        self._cached_mem = self._read_mem()
+
+    def _read_mem(self, page=None):
+        page = page if page is not None else self._page
+        addr = page * 0x100
+        return bytearray(self.sim.mpu.memory[addr:addr+0x100])
+
+    def tick(self):
+        new_mem = self._read_mem()
+        if new_mem == self._cached_mem:#
+            return
+        self._cached_mem = new_mem
+        self._mem_changed(self._cached_mem)
+
+    def _mem_changed(self, mem):
+        raise NotImplementedError()
+
+class HexMemoryView(urwid.WidgetWrap, _MemoryViewMixin):
+    _sizing = frozenset(['fixed'])
+
+    def __init__(self, sim, page=0):
+        _MemoryViewMixin.__init__(self, sim, page)
         self._txt = urwid.Text('')
         urwid.WidgetWrap.__init__(self, urwid.Pile([
             ('pack', urwid.Columns([self._txt]))
@@ -22,13 +42,10 @@ class HexMemoryView(urwid.WidgetWrap):
             return size
         return ideal[:len(size)]
 
-    def tick(self):
-        addr = self._page * 0x100
-
+    def _mem_changed(self, mem):
         rows = []
-        mem = self.sim.mpu.memory
         for high_nybble in range(0x10):
-            row_addr = addr + high_nybble * 0x10
+            row_addr = high_nybble * 0x10
             rows.append(''.join([
                 ' '.join(
                     '{:02X}'.format(mem[row_addr + v])
@@ -41,12 +58,11 @@ class HexMemoryView(urwid.WidgetWrap):
             ]))
         self._txt.set_text(('memory hex', '\n'.join(rows)))
 
-class ASCIIMemoryView(urwid.WidgetWrap):
+class ASCIIMemoryView(urwid.WidgetWrap, _MemoryViewMixin):
     _sizing = frozenset(['fixed'])
 
     def __init__(self, sim, page=0):
-        self.sim = sim
-        self._page = page
+        _MemoryViewMixin.__init__(self, sim, page)
         self._txt = urwid.Text('')
         urwid.WidgetWrap.__init__(self, urwid.Pile([
             ('pack', urwid.Columns([self._txt]))
@@ -59,18 +75,17 @@ class ASCIIMemoryView(urwid.WidgetWrap):
             return size
         return ideal[:len(size)]
 
-    def tick(self):
+    def _mem_changed(self, mem):
         def is_print(b):
             return b >= 32 and b < 127
 
-        addr = self._page * 0x100
         rows = []
-        mem = self.sim.mpu.memory
         for high_nybble in range(0x10):
-            row_addr = addr + high_nybble * 0x10
+            row_addr = high_nybble * 0x10
             row_bytes = mem[row_addr:row_addr+0x10]
             rows.extend([
-                ('memory ascii', chr(b)) if is_print(b) else ('memory replace', '.')
+                ('memory ascii', chr(b)) \
+                    if is_print(b) else ('memory replace', '.')
                 for b in row_bytes
             ])
             if high_nybble != 0xf:
@@ -85,6 +100,13 @@ class PageView(urwid.WidgetWrap):
         urwid.WidgetWrap.__init__(self, urwid.Pile([
             ('pack', urwid.Columns([self._txt]))
         ]))
+        self.tick()
+
+    def get_page(self):
+        return self._page
+
+    def set_page(self, p):
+        self._page = p
         self.tick()
 
     def tick(self):
